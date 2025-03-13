@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Snowball Fight Game
 
 A multiplayer web-based snowball fight game built with Three.js, Cannon.js, and Socket.IO.
@@ -62,3 +63,7 @@ To run the game in development mode with auto-restart:
 ```bash
 npm run dev
 ``` 
+=======
+# SnowballPVP
+SnowballPVP Game
+>>>>>>> 004927b97361a1c96ddc64b354778dfcb085902d
