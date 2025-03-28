@@ -162,6 +162,9 @@ function getRandomSpawnPosition() {
 }
 
 io.on('connection', (socket) => {
+    // Send map data immediately when client connects
+    socket.emit('mapData', gameMap.naturalElements);
+
     // Handle new player connection
     socket.on('playerName', (name) => {
         console.log('New player connected:', { id: socket.id, name });
@@ -190,7 +193,6 @@ io.on('connection', (socket) => {
         }));
         
         socket.emit('currentPlayers', playersList);
-        socket.emit('mapData', gameMap.naturalElements);
         
         // Broadcast new player to all other players
         socket.broadcast.emit('newPlayer', {

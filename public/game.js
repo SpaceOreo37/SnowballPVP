@@ -81,7 +81,7 @@ const world = new CANNON.World({
 
 // Improve physics simulation
 world.broadphase = new CANNON.SAPBroadphase(world);
-world.solver.iterations = 5; // Reduced from 10
+world.solver.iterations = 3; // Reduced from 10
 world.defaultContactMaterial = new CANNON.ContactMaterial(
     new CANNON.Material(),
     new CANNON.Material(),
@@ -101,6 +101,14 @@ socket.on('mapData', (mapData) => {
     
     // Create the environment with the new map data
     createEnvironment();
+    
+    // Initialize instanced meshes if they haven't been created yet
+    if (!coverInstances) {
+        createCoverInstances();
+    }
+    if (!treeInstances) {
+        createTreeInstances();
+    }
 });
 
 // Create screen flash overlay for hit effect
@@ -120,19 +128,19 @@ scene.add(camera);
 const SNOWBALL_RADIUS = 0.15;
 const PLAYER_HEIGHT = 2;
 const CROUCHED_HEIGHT = 1; // Height when crouching
-const MOVEMENT_SPEED = 8;  // Base movement speed for all players
-const SPRINT_SPEED = 14;   // Sprint speed for all players
+const MOVEMENT_SPEED = 12;  // Base movement speed for all players
+const SPRINT_SPEED = 18;   // Sprint speed for all players
 const CROUCH_SPEED = 4; // Speed while crouching
-const ACCELERATION = 120;   // Higher acceleration
+const ACCELERATION = 150;   // Higher acceleration
 const AIR_ACCELERATION = 30;  // Better air control
 const MAX_VELOCITY = 25;    // Higher max velocity
 const GROUND_FRICTION = 0.05;  // Much lower ground friction
 const AIR_FRICTION = 0.01;   // Lower air friction
-const THROW_FORCE = 30;
+const THROW_FORCE = 40;
 const MOUSE_SENSITIVITY = 0.001;
-const JUMP_FORCE = 8;  // Slightly stronger jump
+const JUMP_FORCE = 10;  // Slightly stronger jump
 const JUMP_COOLDOWN = 500;
-const SNOWBALL_SPEED = 65; // Increased speed
+const SNOWBALL_SPEED = 70; // Increased speed
 const SNOWBALL_GRAVITY = -4.91; // Reduced gravity effect
 const MAX_SNOWBALL_DISTANCE = 100;
 const HIT_COOLDOWN = 500;
