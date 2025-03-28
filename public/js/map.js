@@ -1,7 +1,7 @@
 class GameMap {
     constructor() {
-        this.width = 200;
-        this.height = 200;
+        this.width = 400;
+        this.height = 400;
         this.walls = [];
         this.coverSpots = [];
         this.fort = null;
@@ -15,15 +15,11 @@ class GameMap {
         this.createBoundaryWalls();
         // Create central fort
         this.createFort();
-        // Add cover spots
-        this.createCoverSpots();
-        // Add natural elements
-        this.createNaturalElements();
     }
 
     createBoundaryWalls() {
-        const wallHeight = 60; // Make walls 40 units high
-        const wallThickness = 5; // Make walls thicker
+        const wallHeight = 60; // Doubled from 60
+        const wallThickness = 10; // Doubled from 5
 
         // North wall
         this.walls.push({
@@ -64,137 +60,62 @@ class GameMap {
     }
 
     createFort() {
-        const fortSize = 30;
+        const fortSize = 60; // Size of the fort platform
+        const wallInset = 4; // How far the walls are inset from the edge
+        const wallThickness = 2; // Thickness of the walls
+        
         this.fort = {
             x: this.width / 2 - fortSize / 2,
             y: this.height / 2 - fortSize / 2,
             width: fortSize,
             height: fortSize,
             type: 'fort',
-            // Add entrance points
-            entrances: [
-                { x: this.width / 2, y: this.height / 2 - fortSize / 2 }, // North
-                { x: this.width / 2, y: this.height / 2 + fortSize / 2 }, // South
-                { x: this.width / 2 - fortSize / 2, y: this.height / 2 }, // West
-                { x: this.width / 2 + fortSize / 2, y: this.height / 2 }  // East
-            ]
-        };
-    }
-
-    createCoverSpots() {
-        // We no longer need the old cover spots since we're using the ring-based system
-        this.coverSpots = []; // Just initialize as empty array
-    }
-
-    createNaturalElements() {
-        const naturalElementsPositions = [];
-        const fortCenter = {
-            x: this.width / 2,
-            y: this.height / 2
-        };
-
-        // Clear and initialize cover spots array
-        this.coverSpots = [];
-
-        // Place cubes first
-        const cubeSize = 6.5;
-        
-        // Inner ring: 12 cubes
-        const innerRadius = 45;
-        const innerCount = 12;
-        this.placeCubesInRing(innerRadius, innerCount, fortCenter, cubeSize, naturalElementsPositions);
-
-        // Outer ring: 8 cubes
-        const outerRadius = 75;
-        const outerCount = 8;
-        this.placeCubesInRing(outerRadius, outerCount, fortCenter, cubeSize, naturalElementsPositions);
-
-        // Then add trees, ensuring they don't overlap with cubes
-        const treesPerQuadrant = 15; // Increased from 10 to 15 (15 * 4 = 60 total trees)
-        for (let quadrant = 0; quadrant < 4; quadrant++) {
-            for (let i = 0; i < treesPerQuadrant; i++) {
-                const padding = 15;
-                let attempts = 0;
-                const maxAttempts = 50;
-                
-                while (attempts < maxAttempts) {
-                    const quadX = quadrant % 2 === 0 ? 0 : this.width/2;
-                    const quadY = quadrant < 2 ? 0 : this.height/2;
-                    
-                    const x = quadX + padding + Math.random() * (this.width/2 - 2 * padding);
-                    const y = quadY + padding + Math.random() * (this.height/2 - 2 * padding);
-                    
-                    if (this.isValidTreePosition(x, y, fortCenter, naturalElementsPositions)) {
-                        naturalElementsPositions.push({
-                            x, y,
-                            radius: 2 + Math.random(),
-                            type: 'tree'
-                        });
-                        break;
-                    }
-                    attempts++;
+            baseHeight: 10, // Lower base height
+            wallHeight: 4, // Half of PLAYER_HEIGHT (2)
+            wallInset: wallInset,
+            wallThickness: wallThickness,
+            // Define the walls as segments
+            walls: [
+                // North wall
+                {
+                    x: wallInset,
+                    y: wallInset,
+                    width: fortSize - (wallInset * 2),
+                    depth: wallThickness
+                },
+                // South wall
+                {
+                    x: wallInset,
+                    y: fortSize - wallInset - wallThickness,
+                    width: fortSize - (wallInset * 2),
+                    depth: wallThickness
+                },
+                // West wall
+                {
+                    x: wallInset,
+                    y: wallInset,
+                    width: wallThickness,
+                    depth: fortSize - (wallInset * 2)
+                },
+                // East wall
+                {
+                    x: fortSize - wallInset - wallThickness,
+                    y: wallInset,
+                    width: wallThickness,
+                    depth: fortSize - (wallInset * 2)
                 }
-            }
-        }
-
-        this.naturalElements = naturalElementsPositions;
+            ],
+            entrances: [] // Keep entrances empty for now
+        };
     }
 
-    // Helper method for tree position validation
-    isValidTreePosition(x, y, fortCenter, elements) {
-        // Check if too close to fort
-        const distanceToFort = Math.sqrt(
-            Math.pow(x - fortCenter.x, 2) + 
-            Math.pow(y - fortCenter.y, 2)
-        );
-        if (distanceToFort < 30) return false;
-
-        // Check if within map bounds
-        const padding = 15;
-        if (x < padding || x > this.width - padding || 
-            y < padding || y > this.height - padding) {
-            return false;
-        }
-
-        // Check distance from other elements
-        for (const element of elements) {
-            const distance = Math.sqrt(
-                Math.pow(x - element.x, 2) + 
-                Math.pow(y - element.y, 2)
-            );
-            // Use larger minimum distance for cubes to ensure trees don't spawn too close
-            const minDistance = element.type === 'cover' ? 8 : 15;
-            if (distance < minDistance) return false;
-        }
-
-        return true;
-    }
-
-    // Helper method to place cubes in a ring
-    placeCubesInRing(radius, count, center, cubeSize, naturalElementsPositions) {
-        const angleStep = (Math.PI * 2) / count;
-        
-        for (let i = 0; i < count; i++) {
-            const angle = i * angleStep;
-            
-            const x = center.x + radius * Math.cos(angle);
-            const y = center.y + radius * Math.sin(angle);
-
-            const cube = {
-                x, y,
-                width: cubeSize,
-                height: cubeSize,
-                depth: cubeSize, // Added depth to make it a perfect cube
-                type: 'cover'
-            };
-
-            naturalElementsPositions.push(cube);
-            this.coverSpots.push(cube);
-        }
+    setNaturalElements(elements) {
+        this.naturalElements = elements;
+        // Update cover spots from the elements
+        this.coverSpots = elements.filter(element => element.type === 'cover');
     }
 
     getAllObjects() {
-        // Since coverSpots are now managed with naturalElements, we can simplify this
         return [
             ...this.walls,
             this.fort,

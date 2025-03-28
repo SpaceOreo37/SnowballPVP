@@ -10,7 +10,7 @@ const COLLISION_GROUPS = {
 };
 
 // Add custom gravity for player
-const PLAYER_GRAVITY = -15; // Stronger gravity for player (default was -9.82)
+const PLAYER_GRAVITY = -16; // Stronger gravity for player (default was -9.82)
 
 // Initialize Three.js
 const scene = new THREE.Scene();
@@ -20,6 +20,8 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = true;
+renderer.shadowMap.needsUpdate = true;
 document.body.appendChild(renderer.domElement);
 
 // Handle window resize
@@ -30,49 +32,39 @@ window.addEventListener('resize', () => {
 });
 
 // Add lights
-const ambientLight = new THREE.AmbientLight(0x6688cc, 0.5);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); // White ambient light with low intensity
 scene.add(ambientLight);
 
 // Create sun visualization
 const sunGeometry = new THREE.SphereGeometry(15, 32, 32);
 const sunMaterial = new THREE.MeshBasicMaterial({ 
-    color: 0xffffbb, // Slightly less yellow, more white
+    color: 0xFFFFFF, // Changed to match ground color
     transparent: true,
-    opacity: 0.4, // More transparent
-    fog: false // Make sun unaffected by fog
+    opacity: 0.4,
+    fog: false
 });
 const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
-// Position sun near one of the walls for better shadow casting
-sunMesh.position.set(-150, 200, -150);
-// Create a glow effect around the sun
-const sunGlowGeometry = new THREE.SphereGeometry(25, 32, 32);
-const sunGlowMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffee,
-    transparent: true,
-    opacity: 0.15,
-    fog: false,
-    side: THREE.BackSide
-});
-const sunGlow = new THREE.Mesh(sunGlowGeometry, sunGlowMaterial);
-sunMesh.add(sunGlow);
+// Position sun for optimal shadow casting
+sunMesh.position.set(-300, 400, -300);
 scene.add(sunMesh);
 
 // Create a more powerful directional light
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 0.8); // Changed light color to match sun
 directionalLight.position.copy(sunMesh.position);
 directionalLight.castShadow = true;
 
-// Adjust shadow camera to match new sun position
+// Optimize shadow settings
 directionalLight.shadow.camera.near = 1;
-directionalLight.shadow.camera.far = 500;
-directionalLight.shadow.camera.left = -250;
-directionalLight.shadow.camera.right = 250;
-directionalLight.shadow.camera.top = 250;
-directionalLight.shadow.camera.bottom = -250;
+directionalLight.shadow.camera.far = 1000;
+directionalLight.shadow.camera.left = -500;
+directionalLight.shadow.camera.right = 500;
+directionalLight.shadow.camera.top = 500;
+directionalLight.shadow.camera.bottom = -500;
 directionalLight.shadow.mapSize.width = 4096;
 directionalLight.shadow.mapSize.height = 4096;
-directionalLight.shadow.bias = -0.0001;
-directionalLight.shadow.normalBias = 0.02;
+directionalLight.shadow.bias = -0.0003; // Adjusted for cleaner shadows
+directionalLight.shadow.normalBias = 0.005;
+directionalLight.shadow.radius = 2; // Slight blur for softer edges
 
 // Create a target for the directional light
 const lightTarget = new THREE.Object3D();
@@ -82,14 +74,6 @@ directionalLight.target = lightTarget;
 
 scene.add(directionalLight);
 
-// Add a subtle hemisphere light for better ambient lighting
-const hemisphereLight = new THREE.HemisphereLight(0x6688cc, 0x998877, 0.6);
-scene.add(hemisphereLight);
-
-// Uncomment these lines for debugging shadow camera
-// const helper = new THREE.CameraHelper(directionalLight.shadow.camera);
-// scene.add(helper);
-
 // Initialize physics world
 const world = new CANNON.World({
     gravity: new CANNON.Vec3(0, -9.82, 0)
@@ -97,7 +81,7 @@ const world = new CANNON.World({
 
 // Improve physics simulation
 world.broadphase = new CANNON.SAPBroadphase(world);
-world.solver.iterations = 10;
+world.solver.iterations = 5; // Reduced from 10
 world.defaultContactMaterial = new CANNON.ContactMaterial(
     new CANNON.Material(),
     new CANNON.Material(),
@@ -109,6 +93,15 @@ world.defaultContactMaterial = new CANNON.ContactMaterial(
 
 // Initialize socket.io
 const socket = io();
+
+// Add socket event handler for map data
+socket.on('mapData', (mapData) => {
+    // Set the natural elements in the game map
+    gameMap.setNaturalElements(mapData);
+    
+    // Create the environment with the new map data
+    createEnvironment();
+});
 
 // Create screen flash overlay for hit effect
 const screenFlashGeometry = new THREE.PlaneGeometry(2, 2);
@@ -139,14 +132,14 @@ const THROW_FORCE = 30;
 const MOUSE_SENSITIVITY = 0.001;
 const JUMP_FORCE = 8;  // Slightly stronger jump
 const JUMP_COOLDOWN = 500;
-const SNOWBALL_SPEED = 50; // Increased speed
+const SNOWBALL_SPEED = 65; // Increased speed
 const SNOWBALL_GRAVITY = -4.91; // Reduced gravity effect
 const MAX_SNOWBALL_DISTANCE = 100;
 const HIT_COOLDOWN = 500;
 const THROW_FORCE_UPWARD = 0.03; // Slight upward angle for better trajectory
 const MAX_HEALTH = 100;
 const DAMAGE_PER_HIT = 30;
-const RESPAWN_DELAY = 5000; // 5 seconds in milliseconds
+const RESPAWN_DELAY = 3000; // 3 seconds in milliseconds
 
 // Sprint meter constants
 const MAX_SPRINT_DURATION = 5000; // 5 seconds in milliseconds
@@ -154,8 +147,8 @@ const SPRINT_METER_WIDTH = 400; // Doubled from 200
 const SPRINT_METER_HEIGHT = 40; // Doubled from 20
 
 // Arena constants
-const ARENA_SIZE = 220; // Changed to match actual playable area
-const SAFE_SPAWN_MARGIN = 20;
+const ARENA_SIZE = 440; // Changed to match actual playable area (400 + 40 for safety)
+const SAFE_SPAWN_MARGIN = 40; // Doubled from 20
 const SPAWN_POSITIONS = [
     { x: ARENA_SIZE/2 - SAFE_SPAWN_MARGIN, z: ARENA_SIZE/2 - SAFE_SPAWN_MARGIN }, // Main quadrant 4 position
     { x: ARENA_SIZE/2 - SAFE_SPAWN_MARGIN*2, z: ARENA_SIZE/2 - SAFE_SPAWN_MARGIN }, // Slightly to the left
@@ -166,6 +159,11 @@ const SPAWN_POSITIONS = [
 // Add new constants for snowball system
 const MAX_SNOWBALLS = 10;
 const RELOAD_TIME = 3000; // 3 seconds in milliseconds
+
+// Add after the game constants section
+const NAME_TAG_DISTANCE = 40; // Distance at which name tags start to fade
+const NAME_TAG_FADE_DISTANCE = 15; // Distance over which name tags fade out (from 40 to 55)
+const NAME_TAG_MAX_DISTANCE = 55; // Distance at which name tags completely disappear
 
 // Player variables
 let playerBody;
@@ -190,6 +188,14 @@ let isSprintExhausted = false;
 let wasSprintingBeforeJump = false;
 let respawnCountdown = 5;
 let respawnTimer = null;
+let playerNames = new Map();
+const playerKills = new Map(); // Track kills for each player
+let isPaused = false;
+let wasAlive = false;
+let lastPosition = null;
+let lastHealth = 0;
+let lastSnowballCount = 0;
+let isExitingGame = false;
 
 // Controls
 const keys = { w: false, a: false, s: false, d: false, e: false, ' ': false, Shift: false, q: false };
@@ -226,17 +232,35 @@ const terrainPlayerContact = new CANNON.ContactMaterial(terrainMaterial, playerM
 world.addContactMaterial(terrainSnowballContact);
 world.addContactMaterial(terrainPlayerContact);
 
+// Create height limit barrier
+const heightLimitShape = new CANNON.Plane();
+const heightLimitBody = new CANNON.Body({
+    mass: 0,
+    shape: heightLimitShape,
+    material: terrainMaterial,
+    collisionFilterGroup: COLLISION_GROUPS.TERRAIN,
+    collisionFilterMask: COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.SNOWBALL,
+    position: new CANNON.Vec3(0, 60, 0) // Position at 60 units high
+});
+// Rotate the height limit plane to face downward
+heightLimitBody.quaternion.setFromEuler(Math.PI / 2, 0, 0);
+world.addBody(heightLimitBody);
+
 // Create ground with better collision setup
-const groundGeometry = new THREE.BoxGeometry(400, 1, 400);
+const groundGeometry = new THREE.BoxGeometry(880, 1, 880); 
 const groundMaterial = new THREE.MeshStandardMaterial({ 
     color: 0xFFFFFF,
     roughness: 0.9,
-    metalness: 0.0
+    metalness: 0.2,
+    emissive: 0xd3e1ff,
+    emissiveIntensity: 0.2,
+    side: THREE.FrontSide
 });
 
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 ground.position.set(0, -0.5, 0);
 ground.receiveShadow = true;
+ground.castShadow = false;
 scene.add(ground);
 
 // Add ground physics body with improved collision setup
@@ -270,7 +294,7 @@ const createInvisibleWall = (pos, size) => {
 // Add invisible floor boundaries
 createInvisibleWall(
     new CANNON.Vec3(0, -2, 0),
-    new CANNON.Vec3(110, 2, 110)
+    new CANNON.Vec3(220, 2, 220) // Doubled from 110
 );
 
 // Add fog to create depth and hide the ground edges
@@ -279,22 +303,40 @@ scene.fog = new THREE.Fog(0x4488ff, 30, 120); // Increased near value from 20 to
 // Initialize game map
 const gameMap = new GameMap();
 
-function createWall(x, y, width, height, depth) {
-    // Create visual wall
-    const wallGeometry = new THREE.BoxGeometry(width, height, depth);
+// Add instanced wall meshes
+let wallInstances = null;
+let wallInstanceCount = 0;
+const MAX_WALL_INSTANCES = 4;
+
+function createWallInstances() {
+    // Create base wall geometry
+    const wallGeometry = new THREE.BoxGeometry(1, 60, 1);
     const wallMaterial = new THREE.MeshStandardMaterial({
         color: 0x808080,
         roughness: 0.7,
         metalness: 0.2
     });
-    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
-    wall.position.set(x + width/2, height/2, y + depth/2);
-    // Boundary walls should not cast or receive shadows
-    wall.castShadow = false;
-    wall.receiveShadow = false;
-    scene.add(wall);
 
-    // Add physics body for wall
+    // Create instanced mesh
+    wallInstances = new THREE.InstancedMesh(wallGeometry, wallMaterial, MAX_WALL_INSTANCES);
+    scene.add(wallInstances);
+}
+
+function createWall(x, y, width, height, depth) {
+    if (!wallInstances) {
+        createWallInstances();
+    }
+
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3(x + width/2, height/2, y + depth/2);
+    const scale = new THREE.Vector3(width, height, depth);
+    const quaternion = new THREE.Quaternion();
+
+    matrix.compose(position, quaternion, scale);
+    wallInstances.setMatrixAt(wallInstanceCount, matrix);
+    wallInstanceCount++;
+
+    // Add optimized physics body
     const wallShape = new CANNON.Box(new CANNON.Vec3(width/2, height/2, depth/2));
     const wallBody = new CANNON.Body({
         mass: 0,
@@ -303,62 +345,106 @@ function createWall(x, y, width, height, depth) {
         collisionFilterGroup: COLLISION_GROUPS.TERRAIN,
         collisionFilterMask: COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.SNOWBALL
     });
-    wallBody.position.set(x + width/2, height/2, y + depth/2);
+    wallBody.position.copy(position);
     world.addBody(wallBody);
 }
 
 function createFort() {
     const fortData = gameMap.fort;
-    const fortGeometry = new THREE.BoxGeometry(fortData.width, 10, fortData.height);
+    
+    // Create base platform
+    const baseGeometry = new THREE.BoxGeometry(fortData.width, fortData.baseHeight, fortData.height);
     const fortMaterial = new THREE.MeshStandardMaterial({
         color: 0xCCCCCC,
         roughness: 0.8,
         metalness: 0.1
     });
-    const fort = new THREE.Mesh(fortGeometry, fortMaterial);
-    fort.position.set(fortData.x + fortData.width/2, 5, fortData.y + fortData.height/2);
-    fort.castShadow = true;
-    fort.receiveShadow = true;
-    scene.add(fort);
+    const basePlatform = new THREE.Mesh(baseGeometry, fortMaterial);
+    basePlatform.position.set(
+        fortData.x + fortData.width/2, 
+        fortData.baseHeight/2, 
+        fortData.y + fortData.height/2
+    );
+    basePlatform.castShadow = true;
+    basePlatform.receiveShadow = true;
+    scene.add(basePlatform);
 
-    // Create entrances with shadows
-    fortData.entrances.forEach(entrance => {
-        const entranceGeometry = new THREE.BoxGeometry(4, 6, 4);
-        const entranceMesh = new THREE.Mesh(entranceGeometry, fortMaterial);
-        entranceMesh.position.set(entrance.x, 3, entrance.y);
-        entranceMesh.castShadow = true;
-        entranceMesh.receiveShadow = true;
-        scene.add(entranceMesh);
-    });
-
-    // Add physics body for fort
-    const fortShape = new CANNON.Box(new CANNON.Vec3(fortData.width/2, 5, fortData.height/2));
-    const fortBody = new CANNON.Body({
+    // Add physics body for base platform
+    const baseShape = new CANNON.Box(new CANNON.Vec3(fortData.width/2, fortData.baseHeight/2, fortData.height/2));
+    const baseBody = new CANNON.Body({
         mass: 0,
         material: terrainMaterial,
-        shape: fortShape,
+        shape: baseShape,
         collisionFilterGroup: COLLISION_GROUPS.TERRAIN,
         collisionFilterMask: COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.SNOWBALL
     });
-    fortBody.position.set(fortData.x + fortData.width/2, 5, fortData.y + fortData.height/2);
-    world.addBody(fortBody);
+    baseBody.position.copy(basePlatform.position);
+    world.addBody(baseBody);
+
+    // Create walls
+    fortData.walls.forEach(wall => {
+        // Create wall mesh
+        const wallGeometry = new THREE.BoxGeometry(wall.width, fortData.wallHeight, wall.depth);
+        const wallMesh = new THREE.Mesh(wallGeometry, fortMaterial);
+        wallMesh.position.set(
+            fortData.x + wall.x + wall.width/2,
+            fortData.baseHeight + fortData.wallHeight/2,
+            fortData.y + wall.y + wall.depth/2
+        );
+        wallMesh.castShadow = true;
+        wallMesh.receiveShadow = true;
+        scene.add(wallMesh);
+
+        // Add physics body for wall
+        const wallShape = new CANNON.Box(new CANNON.Vec3(wall.width/2, fortData.wallHeight/2, wall.depth/2));
+        const wallBody = new CANNON.Body({
+            mass: 0,
+            material: terrainMaterial,
+            shape: wallShape,
+            collisionFilterGroup: COLLISION_GROUPS.TERRAIN,
+            collisionFilterMask: COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.SNOWBALL
+        });
+        wallBody.position.copy(wallMesh.position);
+        world.addBody(wallBody);
+    });
+}
+
+// Add instanced cover spot meshes
+let coverInstances = null;
+let coverInstanceCount = 0;
+const MAX_COVER_INSTANCES = 30;
+
+function createCoverInstances() {
+    // Create base cover geometry with new dimensions (7x4x7)
+    const coverGeometry = new THREE.BoxGeometry(7, 4, 7);
+    const coverMaterial = new THREE.MeshStandardMaterial({
+        color: 0x808080,
+        roughness: 0.7,
+        metalness: 0.2
+    });
+
+    // Create instanced mesh
+    coverInstances = new THREE.InstancedMesh(coverGeometry, coverMaterial, MAX_COVER_INSTANCES);
+    scene.add(coverInstances);
 }
 
 function createCoverSpot(coverData) {
-    const coverGeometry = new THREE.BoxGeometry(coverData.width, 4, coverData.height);
-    const coverMaterial = new THREE.MeshStandardMaterial({
-        color: 0xA0A0A0,
-        roughness: 0.9,
-        metalness: 0.1
-    });
-    const cover = new THREE.Mesh(coverGeometry, coverMaterial);
-    cover.position.set(coverData.x + coverData.width/2, 2, coverData.y + coverData.height/2);
-    cover.castShadow = true;
-    cover.receiveShadow = true;
-    scene.add(cover);
+    if (!coverInstances) {
+        createCoverInstances();
+    }
 
-    // Add physics body for cover
-    const coverShape = new CANNON.Box(new CANNON.Vec3(coverData.width/2, 2, coverData.height/2));
+    const matrix = new THREE.Matrix4();
+    // Set y position to 2 (half the height) to place bottom of box on ground
+    const position = new THREE.Vector3(coverData.x, 2, coverData.y);
+    const scale = new THREE.Vector3(1, 1, 1);
+    const quaternion = new THREE.Quaternion();
+
+    matrix.compose(position, quaternion, scale);
+    coverInstances.setMatrixAt(coverInstanceCount, matrix);
+    coverInstanceCount++;
+
+    // Add optimized physics body with new dimensions
+    const coverShape = new CANNON.Box(new CANNON.Vec3(3.5, 2, 3.5)); // Half-dimensions for CANNON.js
     const coverBody = new CANNON.Body({
         mass: 0,
         material: terrainMaterial,
@@ -366,26 +452,24 @@ function createCoverSpot(coverData) {
         collisionFilterGroup: COLLISION_GROUPS.TERRAIN,
         collisionFilterMask: COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.SNOWBALL
     });
-    coverBody.position.set(coverData.x + coverData.width/2, 2, coverData.y + coverData.height/2);
+    // Set physics body position to match visual position
+    coverBody.position.set(coverData.x, 2, coverData.y);
     world.addBody(coverBody);
 }
 
-function createTree(x, z) {
-    // Create tree trunk
+// Add instanced tree meshes
+let treeInstances = null;
+let treeInstanceCount = 0;
+const MAX_TREE_INSTANCES = 500;
+
+function createTreeInstances() {
+    // Create base tree geometry
     const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.5, 4, 8);
     const trunkMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x4A2B0F,
         roughness: 0.9,
         metalness: 0.1
     });
-    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-    trunk.position.set(x, 2, z);
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-
-    // Create pine tree top (multiple cones for fuller look)
-    const treeGroup = new THREE.Group();
-    treeGroup.add(trunk);
 
     const coneGeometry1 = new THREE.ConeGeometry(2, 4, 8);
     const coneGeometry2 = new THREE.ConeGeometry(1.6, 3, 8);
@@ -396,27 +480,55 @@ function createTree(x, z) {
         metalness: 0.1
     });
 
-    const cone1 = new THREE.Mesh(coneGeometry1, treeMaterial);
-    cone1.position.set(x, 3, z);
-    cone1.castShadow = true;
-    cone1.receiveShadow = true;
-    treeGroup.add(cone1);
+    // Create instanced meshes
+    const trunkInstanced = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, MAX_TREE_INSTANCES);
+    const cone1Instanced = new THREE.InstancedMesh(coneGeometry1, treeMaterial, MAX_TREE_INSTANCES);
+    const cone2Instanced = new THREE.InstancedMesh(coneGeometry2, treeMaterial, MAX_TREE_INSTANCES);
+    const cone3Instanced = new THREE.InstancedMesh(coneGeometry3, treeMaterial, MAX_TREE_INSTANCES);
 
-    const cone2 = new THREE.Mesh(coneGeometry2, treeMaterial);
-    cone2.position.set(x, 4.5, z);
-    cone2.castShadow = true;
-    cone2.receiveShadow = true;
-    treeGroup.add(cone2);
+    // Create a group for all tree instances
+    treeInstances = new THREE.Group();
+    treeInstances.add(trunkInstanced);
+    treeInstances.add(cone1Instanced);
+    treeInstances.add(cone2Instanced);
+    treeInstances.add(cone3Instanced);
 
-    const cone3 = new THREE.Mesh(coneGeometry3, treeMaterial);
-    cone3.position.set(x, 5.5, z);
-    cone3.castShadow = true;
-    cone3.receiveShadow = true;
-    treeGroup.add(cone3);
+    scene.add(treeInstances);
+}
 
-    scene.add(treeGroup);
+function createTree(x, z) {
+    if (!treeInstances) {
+        createTreeInstances();
+    }
 
-    // Add physics body for tree with much wider trunk
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3(x, 2, z);
+    const scale = new THREE.Vector3(1, 1, 1);
+    const quaternion = new THREE.Quaternion();
+
+    // Set trunk position
+    matrix.compose(position, quaternion, scale);
+    treeInstances.children[0].setMatrixAt(treeInstanceCount, matrix);
+
+    // Set cone1 position
+    position.y = 3;
+    matrix.compose(position, quaternion, scale);
+    treeInstances.children[1].setMatrixAt(treeInstanceCount, matrix);
+
+    // Set cone2 position
+    position.y = 4.5;
+    matrix.compose(position, quaternion, scale);
+    treeInstances.children[2].setMatrixAt(treeInstanceCount, matrix);
+
+    // Set cone3 position
+    position.y = 5.5;
+    matrix.compose(position, quaternion, scale);
+    treeInstances.children[3].setMatrixAt(treeInstanceCount, matrix);
+
+    // Update instance count
+    treeInstanceCount++;
+
+    // Add physics body with optimized collision shape
     const trunkShape = new CANNON.Cylinder(0.8, 0.9, 4, 8);
     const treeBody = new CANNON.Body({
         mass: 0,
@@ -428,7 +540,7 @@ function createTree(x, z) {
     treeBody.position.set(x, 2, z);
     world.addBody(treeBody);
 
-    // Add much larger invisible collision for the pine part
+    // Add optimized pine collision
     const pineShape = new CANNON.Cylinder(0.3, 3.0, 6, 8);
     const pineBody = new CANNON.Body({
         mass: 0,
@@ -441,82 +553,7 @@ function createTree(x, z) {
     world.addBody(pineBody);
 }
 
-function createRock(x, z, scale = 1) {
-    // Increase base size and add random variation
-    const baseScale = scale * (2 + Math.random());
-    const rockGeometry = new THREE.DodecahedronGeometry(1 * baseScale, 1);
-    const rockMaterial = new THREE.MeshStandardMaterial({
-        color: 0x666666,
-        roughness: 0.9,
-        metalness: 0.1,
-        flatShading: true
-    });
-    
-    // Randomly rotate and scale the rock
-    const rock = new THREE.Mesh(rockGeometry, rockMaterial);
-    // Position rock partially in ground (about 1/3 of its height)
-    const rockHeight = baseScale * 0.66;
-    rock.position.set(x, rockHeight, z);
-    rock.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-    );
-    // Add some random scaling variation to make rocks less uniform
-    const scaleX = baseScale * (0.9 + Math.random() * 0.2);
-    const scaleY = baseScale * (0.8 + Math.random() * 0.4);
-    const scaleZ = baseScale * (0.9 + Math.random() * 0.2);
-    rock.scale.set(scaleX, scaleY, scaleZ);
-    rock.castShadow = true;
-    rock.receiveShadow = true;
-    scene.add(rock);
-
-    // Create a collision box that fully encompasses the rock
-    const collisionWidth = scaleX * 2.5;  // Much wider collision box
-    const collisionHeight = scaleY * 2.5; // Much taller collision box
-    const collisionDepth = scaleZ * 2.5;  // Much deeper collision box
-    
-    const collisionBox = new CANNON.Box(new CANNON.Vec3(
-        collisionWidth,
-        collisionHeight,
-        collisionDepth
-    ));
-
-    const rockBody = new CANNON.Body({
-        mass: 0,
-        material: terrainMaterial,
-        shape: collisionBox,
-        collisionFilterGroup: COLLISION_GROUPS.TERRAIN,
-        collisionFilterMask: COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.SNOWBALL
-    });
-
-    // Position the collision box to be centered on the rock
-    rockBody.position.set(x, rockHeight, z);
-    rockBody.quaternion.copy(rock.quaternion);
-    world.addBody(rockBody);
-
-    // Add a debug visualization of the collision box if needed
-    // Uncomment these lines to see the collision box
-    /*
-    const boxGeometry = new THREE.BoxGeometry(
-        collisionWidth * 2,
-        collisionHeight * 2,
-        collisionDepth * 2
-    );
-    const boxMaterial = new THREE.MeshBasicMaterial({
-        color: 0xff0000,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.3
-    });
-    const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
-    boxMesh.position.copy(rockBody.position);
-    boxMesh.quaternion.copy(rockBody.quaternion);
-    scene.add(boxMesh);
-    */
-}
-
-// Modify the createEnvironment function
+// Optimize the createEnvironment function
 function createEnvironment() {
     // Create boundary walls
     gameMap.walls.forEach(wall => {
@@ -526,62 +563,145 @@ function createEnvironment() {
     // Create fort
     createFort();
 
-    // Create cover spots
-    gameMap.coverSpots.forEach(cover => {
-        createCoverSpot(cover);
-    });
-
-    // Create natural elements
-    gameMap.naturalElements.forEach(element => {
-        if (element.type === 'tree') {
+    // Create cover spots and natural elements
+    gameMap.getAllObjects().forEach(element => {
+        if (element.type === 'cover') {
+            createCoverSpot(element);
+        } else if (element.type === 'tree') {
             createTree(element.x, element.y);
-        } else if (element.type === 'rock') {
-            createRock(element.x, element.y);
         }
     });
+
+    // Update instance counts
+    if (coverInstances) {
+        coverInstances.count = coverInstanceCount;
+    }
+    if (treeInstances) {
+        treeInstances.children.forEach(child => {
+            if (child instanceof THREE.InstancedMesh) {
+                child.count = treeInstanceCount;
+            }
+        });
+    }
 }
 
 // Call createEnvironment after creating the ground
 createEnvironment();
 
-// Modify player creation to use player material
-function createPlayer(id, initialPosition) {
-    // Create the character model with larger dimensions
-    const upperBodyGeometry = new THREE.CapsuleGeometry(0.6, 0.8, 32);
-    const lowerBodyGeometry = new THREE.CapsuleGeometry(0.7, 1.2, 32);
-    const headGeometry = new THREE.SphereGeometry(0.5, 32, 32);
-    const armGeometry = new THREE.CapsuleGeometry(0.25, 0.8, 16);
+// Modify the updateNameLabels function
+function updateNameLabels() {
+    players.forEach((player, id) => {
+        if (id !== socket.id && player.nameLabel) {
+            // Make name tag face camera
+            player.nameLabel.quaternion.copy(camera.quaternion);
+            
+            // Calculate distance to player
+            const distance = camera.position.distanceTo(player.mesh.position);
+            
+            // Calculate opacity based on distance
+            let opacity = 1;
+            if (distance > NAME_TAG_DISTANCE) {
+                opacity = 1 - (distance - NAME_TAG_DISTANCE) / NAME_TAG_FADE_DISTANCE;
+                opacity = Math.max(0, Math.min(1, opacity));
+            }
+            
+            // Update name label visibility and opacity
+            player.nameLabel.visible = opacity > 0;
+            player.nameLabel.material.opacity = opacity;
+        }
+    });
+}
+
+// Modify the createPlayerNameLabel function
+function createPlayerNameLabel(name) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 1024;
+    canvas.height = 256;
+
+    // Enable text antialiasing
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+
+    // Draw rounded rectangle background
+    const cornerRadius = 20;
+    const width = canvas.width;
+    const height = canvas.height;
     
-    const material = new THREE.MeshStandardMaterial({ 
+    context.beginPath();
+    context.moveTo(cornerRadius, 0);
+    context.lineTo(width - cornerRadius, 0);
+    context.quadraticCurveTo(width, 0, width, cornerRadius);
+    context.lineTo(width, height - cornerRadius);
+    context.quadraticCurveTo(width, height, width - cornerRadius, height);
+    context.lineTo(cornerRadius, height);
+    context.quadraticCurveTo(0, height, 0, height - cornerRadius);
+    context.lineTo(0, cornerRadius);
+    context.quadraticCurveTo(0, 0, cornerRadius, 0);
+    context.closePath();
+    
+    // Fill background with more opaque black
+    context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    context.fill();
+
+    // Draw text with improved quality
+    context.font = 'bold 150px Arial';
+    context.fillStyle = 'white';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    
+    // Add stronger text shadow for better readability
+    context.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    context.shadowBlur = 6;
+    context.shadowOffsetX = 2;
+    context.shadowOffsetY = 2;
+    
+    // Draw the name
+    context.fillText(name, canvas.width / 2, canvas.height / 2);
+
+    // Create texture with better quality settings
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = true;
+    
+    const spriteMaterial = new THREE.SpriteMaterial({ 
+        map: texture,
+        transparent: true,
+        opacity: 1
+    });
+    
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(2, 0.5, 1);
+    sprite.position.y = PLAYER_HEIGHT + 1.5;
+    
+    return sprite;
+}
+
+// Modify the createPlayer function to include name label
+function createPlayer(id, initialPosition, name) {
+    // Create the character model with snowman-like appearance
+    const bodyGeometry = new THREE.SphereGeometry(1.0, 32, 32);  // Body size
+    const headGeometry = new THREE.SphereGeometry(1.2, 32, 32);  // Head size
+    
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
         color: 0xffffff,
         roughness: 0.7,
         metalness: 0.3
     });
 
     // Create body parts
-    const upperBodyMesh = new THREE.Mesh(upperBodyGeometry, material);
-    const lowerBodyMesh = new THREE.Mesh(lowerBodyGeometry, material);
-    const headMesh = new THREE.Mesh(headGeometry, material);
-    const leftArmMesh = new THREE.Mesh(armGeometry, material);
-    const rightArmMesh = new THREE.Mesh(armGeometry, material);
+    const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    const headMesh = new THREE.Mesh(headGeometry, bodyMaterial);
     
     // Position body parts
-    upperBodyMesh.position.y = PLAYER_HEIGHT / 2 + 0.4;
-    lowerBodyMesh.position.y = PLAYER_HEIGHT / 4;
-    headMesh.position.y = PLAYER_HEIGHT / 2 + 1.2;
-    
-    leftArmMesh.position.set(-0.85, PLAYER_HEIGHT / 2 + 0.4, 0);
-    rightArmMesh.position.set(0.85, PLAYER_HEIGHT / 2 + 0.4, 0);
-    leftArmMesh.rotation.z = Math.PI / 3;
-    rightArmMesh.rotation.z = -Math.PI / 3;
+    bodyMesh.position.y = 0.1;  // Body radius to touch ground
+    headMesh.position.y = 1.6;  // Position head above body
     
     // Create a group to hold all parts
     const playerGroup = new THREE.Group();
-    playerGroup.add(upperBodyMesh);
-    playerGroup.add(lowerBodyMesh);
+    playerGroup.add(bodyMesh);
     playerGroup.add(headMesh);
-    playerGroup.add(leftArmMesh);
-    playerGroup.add(rightArmMesh);
 
     // Add outline for other players
     if (id !== socket.id) {
@@ -590,12 +710,11 @@ function createPlayer(id, initialPosition) {
             side: THREE.BackSide
         });
         
-        [upperBodyMesh, lowerBodyMesh, headMesh, leftArmMesh, rightArmMesh].forEach(mesh => {
+        [bodyMesh, headMesh].forEach(mesh => {
             const outline = mesh.clone();
             outline.material = outlineMaterial;
             outline.scale.multiplyScalar(1.05);
             outline.position.copy(mesh.position);
-            outline.rotation.copy(mesh.rotation);
             playerGroup.add(outline);
         });
         playerGroup.visible = true;
@@ -608,7 +727,7 @@ function createPlayer(id, initialPosition) {
     
     const body = new CANNON.Body({
         mass: id === socket.id ? 1 : 0,
-        shape: new CANNON.Cylinder(1.0, 1.0, PLAYER_HEIGHT, 8),
+        shape: new CANNON.Cylinder(0.7, 0.7, PLAYER_HEIGHT, 8),  // Collision cylinder
         position: new CANNON.Vec3(initialPosition.x, initialPosition.y, initialPosition.z),
         fixedRotation: true,
         material: playerMaterial,
@@ -628,13 +747,17 @@ function createPlayer(id, initialPosition) {
     scene.add(playerGroup);
 
     // Add hit effect material
-    const hitMaterial = material.clone();
+    const hitMaterial = bodyMaterial.clone();
     hitMaterial.color.setHex(0xff0000);
     
     // Store reference to materials and meshes for hit effect
-    const meshes = [upperBodyMesh, lowerBodyMesh, headMesh, leftArmMesh, rightArmMesh];
+    const meshes = [bodyMesh, headMesh];
     const normalMaterials = meshes.map(mesh => mesh.material);
     
+    // Add name label
+    const nameLabel = createPlayerNameLabel(name || 'Player');
+    playerGroup.add(nameLabel);
+
     // Store references to body parts for animation
     return { 
         mesh: playerGroup, 
@@ -646,17 +769,21 @@ function createPlayer(id, initialPosition) {
         },
         isHit: false,
         bodyParts: {
-            upper: upperBodyMesh,
-            lower: lowerBodyMesh,
-            head: headMesh,
-            leftArm: leftArmMesh,
-            rightArm: rightArmMesh
-        }
+            body: bodyMesh,
+            head: headMesh
+        },
+        nameLabel
     };
 }
 
 // Add this function after createPlayer
 function createFirstPersonArm() {
+    // Remove existing arm if it exists
+    if (firstPersonArm) {
+        camera.remove(firstPersonArm);
+        firstPersonArm = null;
+    }
+    
     const armGroup = new THREE.Group();
     
     const armGeometry = new THREE.CapsuleGeometry(0.15, 0.7, 16);
@@ -667,22 +794,28 @@ function createFirstPersonArm() {
     });
     
     const arm = new THREE.Mesh(armGeometry, armMaterial);
-    // Adjust arm position to better hold the snowball
-    arm.position.set(0.4, -0.7, -0.4);  // Moved slightly forward
-    arm.rotation.x = -Math.PI / 4;      // Angled more upward
-    arm.rotation.y = Math.PI / 8;       // Slightly turned inward
+    arm.position.set(0.4, -0.7, -0.4);
+    arm.rotation.x = -Math.PI / 4;
+    arm.rotation.y = Math.PI / 8;
     
     armGroup.add(arm);
     
     firstPersonArm = armGroup;
     camera.add(firstPersonArm);
     
-    // Create held snowball after arm is initialized
-    createHeldSnowball();
+    // Only create held snowball if we have snowballs and aren't reloading
+    if (snowballCount > 0 && !isReloading) {
+        createHeldSnowball();
+    }
 }
 
 function createHeldSnowball() {
-    if (!firstPersonArm || snowballCount <= 0 || isReloading) return;
+    if (!firstPersonArm || snowballCount <= 0 || isReloading) {
+        if (heldSnowball) {
+            heldSnowball.visible = false;
+        }
+        return;
+    }
     
     if (heldSnowball) {
         firstPersonArm.remove(heldSnowball);
@@ -697,11 +830,12 @@ function createHeldSnowball() {
     
     heldSnowball = new THREE.Mesh(snowballGeometry, snowballMaterial);
     heldSnowball.position.set(0.4, -0.25, -0.7);
+    heldSnowball.visible = true;
     firstPersonArm.add(heldSnowball);
 }
 
 // Modify snowball creation to use snowball material
-function createSnowball(position, direction) {
+function createSnowball(position, direction, shooterId) {
     const geometry = new THREE.SphereGeometry(SNOWBALL_RADIUS);
     const material = new THREE.MeshStandardMaterial({ 
         color: 0xffffff,
@@ -741,7 +875,8 @@ function createSnowball(position, direction) {
         body,
         initialPosition: position.clone(),
         timeCreated: Date.now(),
-        hasHit: false
+        hasHit: false,
+        shooterId: shooterId // Store the shooter's ID
     };
     snowballs.push(snowball);
     world.addBody(body);
@@ -829,17 +964,132 @@ function createHitEffect(position) {
     animateParticles();
 }
 
-// Socket events
+// Add after player variables
+let processedEvents = new Set();
+let processedMessages = new Set();
+
+// Helper function to track processed events
+function isEventProcessed(eventType, id, timestamp) {
+    const eventKey = `${eventType}_${id}_${timestamp}`;
+    if (processedEvents.has(eventKey)) {
+        return true;
+    }
+    processedEvents.add(eventKey);
+    
+    // Clear old events after 5 seconds
+    setTimeout(() => {
+        processedEvents.delete(eventKey);
+    }, 5000);
+    
+    return false;
+}
+
+// Modify socket event handlers
 socket.on('currentPlayers', (playersList) => {
-    playersList.forEach(playerInfo => {
-        if (playerInfo.id !== socket.id) {
-            players.set(playerInfo.id, createPlayer(playerInfo.id, playerInfo.position));
+    console.log('Received current players:', playersList);
+    
+    // First, remove all non-local players from the scene and physics world
+    players.forEach((player, id) => {
+        if (id !== socket.id) {
+            scene.remove(player.mesh);
+            world.removeBody(player.body);
+            players.delete(id);
+            playerNames.delete(id);
+            playerKills.delete(id);
         }
     });
+
+    // Create a Set to track processed player IDs
+    const processedPlayers = new Set();
+
+    playersList.forEach(playerInfo => {
+        // Skip if we've already processed this player or if it's the local player
+        if (processedPlayers.has(playerInfo.id) || playerInfo.id === socket.id) {
+            return;
+        }
+
+        const player = createPlayer(playerInfo.id, playerInfo.position, playerInfo.name);
+        players.set(playerInfo.id, player);
+        playerNames.set(playerInfo.id, playerInfo.name || 'Unknown');
+        playerKills.set(playerInfo.id, playerInfo.kills || 0);
+        console.log(`Added player ${playerInfo.name} with ${playerInfo.kills || 0} kills`);
+        
+        // Mark this player as processed
+        processedPlayers.add(playerInfo.id);
+    });
+
+    updateLeaderboard();
 });
 
 socket.on('newPlayer', (playerInfo) => {
-    players.set(playerInfo.id, createPlayer(playerInfo.id, playerInfo.position));
+    if (isEventProcessed('join', playerInfo.id, Date.now())) return;
+    
+    // Check if player already exists
+    if (!players.has(playerInfo.id)) {
+        const player = createPlayer(playerInfo.id, playerInfo.position, playerInfo.name);
+        players.set(playerInfo.id, player);
+        playerNames.set(playerInfo.id, playerInfo.name || 'Unknown');
+        playerKills.set(playerInfo.id, playerInfo.kills || 0);
+        updateLeaderboard();
+        
+        // Add join message
+        addGameLogMessage(`${playerInfo.name || 'Unknown'} has joined the game`, 'join');
+    }
+});
+
+socket.on('killUpdate', (data) => {
+    if (isEventProcessed('kill', `${data.killerId}_${data.victimId}`, Date.now())) return;
+    
+    console.log('Kill update received:', data);
+    
+    // Store both killer and victim names immediately
+    if (data.killerName) {
+        playerNames.set(data.killerId, data.killerName);
+        console.log(`Stored killer name: ${data.killerName} for ID: ${data.killerId}`);
+    }
+    if (data.victimName) {
+        playerNames.set(data.victimId, data.victimName);
+        console.log(`Stored victim name: ${data.victimName} for ID: ${data.victimId}`);
+    }
+    
+    // Update kill count
+    const kills = typeof data.kills === 'number' ? data.kills : 0;
+    playerKills.set(data.killerId, kills);
+    console.log(`Updated kills for ${playerNames.get(data.killerId)}: ${kills}`);
+    
+    // Update personal kill counter if local player
+    if (data.killerId === socket.id) {
+        updateKillCounter(kills);
+    }
+    
+    // Update leaderboard before adding game log message
+    updateLeaderboard();
+    
+    // Add kill message using stored names
+    const killerName = playerNames.get(data.killerId) || 'Unknown';
+    const victimName = playerNames.get(data.victimId) || 'Unknown';
+    addGameLogMessage(`${killerName} eliminated ${victimName}`, 'kill');
+});
+
+socket.on('playerDisconnected', (playerId) => {
+    if (isEventProcessed('leave', playerId, Date.now())) return;
+    
+    const playerName = playerNames.get(playerId) || 'Unknown';
+    const player = players.get(playerId);
+    
+    // Add leave message first
+    addGameLogMessage(`${playerName} has left the game`, 'leave');
+    
+    // Then clean up player data
+    if (player) {
+        scene.remove(player.mesh);
+        world.removeBody(player.body);
+        players.delete(playerId);
+    }
+    
+    playerKills.delete(playerId);
+    playerNames.delete(playerId);
+    updateLeaderboard();
 });
 
 socket.on('playerMoved', (data) => {
@@ -855,7 +1105,7 @@ socket.on('playerMoved', (data) => {
 socket.on('snowballThrown', (data) => {
     const snowballPosition = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
     const snowballVelocity = new THREE.Vector3(data.velocity.x, data.velocity.y, data.velocity.z);
-    const snowball = createSnowball(snowballPosition, snowballVelocity.normalize());
+    const snowball = createSnowball(snowballPosition, snowballVelocity.normalize(), data.shooterId);
     
     // Set the initial velocity directly on the physics body
     snowball.body.velocity.set(
@@ -871,7 +1121,6 @@ socket.on('playerHit', (data) => {
     if (data.id === socket.id) {
         const oldHealth = health;
         health = data.health;
-        console.log(`Hit taken! Damage: ${data.damage}, Old Health: ${oldHealth}, New Health: ${health}`);
         updateHealthDisplay();
         
         // Screen flash effect
@@ -896,6 +1145,14 @@ socket.on('playerHit', (data) => {
 socket.on('playerDeath', (data) => {
     if (data.id === socket.id) {
         handleDeath();
+    } else {
+        // Handle death for other players
+        const player = players.get(data.id);
+        if (player) {
+            // Turn the player red and hide them
+            player.mesh.visible = false;
+            player.isDead = true;
+        }
     }
 });
 
@@ -904,7 +1161,7 @@ socket.on('playerRespawn', (data) => {
 
     if (data.id === socket.id) {
         // Reset local player
-        health = MAX_HEALTH; // Ensure health is set to max
+        health = MAX_HEALTH;
         updateHealthDisplay();
         
         // Force position update for local player
@@ -913,47 +1170,285 @@ socket.on('playerRespawn', (data) => {
         playerBody.angularVelocity.set(0, 0, 0);
         camera.position.set(data.position.x, data.position.y + PLAYER_HEIGHT - 0.5, data.position.z);
         
-        // Hide death overlay if it exists
+        // Hide death overlay
         const deathOverlay = document.getElementById('deathOverlay');
-        if (deathOverlay) {
-            deathOverlay.style.display = 'none';
-        }
-        
+        const respawnProgressFill = document.getElementById('respawnProgressFill');
+        deathOverlay.style.display = 'none';
+        respawnProgressFill.style.transform = 'scaleX(0)';
+
         // Re-enable controls
         canThrow = true;
         canJump = true;
         isAlive = true;
         isDead = false;
     } else if (player) {
-        // Reset other player
+        // Reset other player's state
+        player.isDead = false;
+        player.mesh.visible = true; // Make player visible again
+        
+        // Reset position and velocity
         player.body.position.copy(data.position);
         player.body.velocity.set(0, 0, 0);
         player.body.angularVelocity.set(0, 0, 0);
         player.mesh.position.copy(data.position);
+        
+        // Reset color
+        player.meshes.forEach((mesh, i) => {
+            mesh.material = player.materials.normal[i];
+        });
     }
 });
 
 socket.on('playerDisconnected', (playerId) => {
+    // Get player name before deleting from maps
+    const playerName = playerNames.get(playerId) || 'Unknown';
     const player = players.get(playerId);
+    
+    // Add leave message first
+    addGameLogMessage(`${playerName} has left the game`, 'leave');
+    
+    // Then clean up player data
     if (player) {
         scene.remove(player.mesh);
         world.removeBody(player.body);
         players.delete(playerId);
     }
+    
+    // Finally remove from tracking maps
+    playerKills.delete(playerId);
+    playerNames.delete(playerId);
+    
+    // Update leaderboard after player removal
+    updateLeaderboard();
 });
 
 // Handle pointer lock
-document.addEventListener('pointerlockchange', () => {
-    if (document.pointerLockElement === renderer.domElement) {
-        isGameStarted = true;
-        document.getElementById('clickToStart').style.display = 'none';
-        console.log('Game started - pointer locked');
-    } else {
-        isGameStarted = false;
-        document.getElementById('clickToStart').style.display = 'block';
-        console.log('Game paused - pointer unlocked');
+function returnToTitleScreen() {
+    // Notify server that player has left
+    socket.emit('playerDisconnected', socket.id);
+    
+    // Reload the page to return to original title screen
+    window.location.reload();
+}
+
+// Add a new variable for tracking control restoration
+let controlsEnabled = true;
+
+// Modify the click event listener to check for controls being enabled
+document.addEventListener('click', (e) => {
+    // Don't allow shooting if paused or controls are disabled
+    if (isPaused || !controlsEnabled) return;
+
+    if (isGameStarted && canThrow && isAlive && !isDead && !isReloading && snowballCount > 0) {
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        
+        // Create snowball slightly in front of the camera for better visibility
+        const position = new THREE.Vector3();
+        camera.getWorldPosition(position);
+        position.add(direction.clone().multiplyScalar(2));
+        
+        // Hide held snowball immediately
+        if (heldSnowball) {
+            heldSnowball.visible = false;
+        }
+        
+        // Create and throw snowball with shooter ID
+        const snowball = createSnowball(position, direction, socket.id);
+        
+        // Emit the exact velocity that was applied to the snowball
+        socket.emit('throwSnowball', { 
+            position: position,
+            velocity: snowball.body.velocity,
+            shooterId: socket.id
+        });
+
+        // Decrease snowball count and update UI
+        snowballCount--;
+        updateSnowballMeter();
+
+        canThrow = false;
+        setTimeout(() => {
+            canThrow = true;
+            if (!isReloading && snowballCount > 0) {
+                createHeldSnowball();
+            }
+        }, 500);
     }
 });
+
+// Remove all previous resume button event listeners and create a single robust one
+function setupPauseMenuListeners() {
+    const resumeButton = document.getElementById('resumeButton');
+    const exitButton = document.getElementById('exitButton');
+    
+    // Remove any existing listeners
+    const oldResumeButton = resumeButton.cloneNode(true);
+    resumeButton.parentNode.replaceChild(oldResumeButton, resumeButton);
+    
+    // Add single resume button listener
+    oldResumeButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Disable controls until fully restored
+        controlsEnabled = false;
+        
+        // Hide pause menu immediately
+        const pauseMenu = document.getElementById('pauseMenu');
+        if (pauseMenu) {
+            pauseMenu.style.display = 'none';
+        }
+        
+        // Reset pause state
+        isPaused = false;
+        
+        // Restore player state
+        if (lastPosition && playerBody) {
+            playerBody.position.copy(lastPosition);
+            health = lastHealth;
+            snowballCount = lastSnowballCount;
+            isAlive = wasAlive;
+            updateHealthDisplay();
+            updateSnowballMeter();
+            
+            // Make player visible to others again
+            socket.emit('playerReturned', {
+                position: lastPosition,
+                health: health,
+                isAlive: isAlive
+            });
+        }
+        
+        // Function to attempt pointer lock with timeout
+        const attemptPointerLock = (attempts = 0) => {
+            if (attempts >= 5) {
+                console.log('Failed to acquire pointer lock after 5 attempts');
+                showPauseMenu(); // Show pause menu again if we failed
+                return;
+            }
+            
+            try {
+                renderer.domElement.requestPointerLock();
+                
+                // Check if pointer lock was successful after a delay
+                setTimeout(() => {
+                    if (document.pointerLockElement !== renderer.domElement) {
+                        console.log(`Pointer lock attempt ${attempts + 1} failed, retrying...`);
+                        attemptPointerLock(attempts + 1);
+                    } else {
+                        // Successfully acquired pointer lock
+                        setTimeout(() => {
+                            controlsEnabled = true;
+                        }, 100);
+                    }
+                }, 100);
+            } catch (error) {
+                console.error('Error requesting pointer lock:', error);
+                showPauseMenu();
+            }
+        };
+        
+        // Start the first attempt after a short delay
+        setTimeout(() => {
+            attemptPointerLock();
+        }, 50);
+    });
+    
+    // Remove any existing exit button listeners
+    const oldExitButton = exitButton.cloneNode(true);
+    exitButton.parentNode.replaceChild(oldExitButton, exitButton);
+    
+    // Add single exit button listener
+    oldExitButton.addEventListener('click', () => {
+        isExitingGame = true;
+        returnToTitleScreen();
+    });
+}
+
+// Modify the showPauseMenu function to ensure listeners are set up
+function showPauseMenu() {
+    // Don't show pause menu if player is dead
+    if (isDead) return;
+
+    const pauseMenu = document.getElementById('pauseMenu');
+    if (pauseMenu) {
+        isPaused = true;
+        controlsEnabled = false;
+        wasAlive = isAlive;
+        
+        // Store current state
+        if (playerBody) {
+            lastPosition = playerBody.position.clone();
+            lastHealth = health;
+            lastSnowballCount = snowballCount;
+            
+            // Reset all movement keys to prevent movement after unpausing
+            Object.keys(keys).forEach(key => keys[key] = false);
+            
+            // Stop all player movement
+            playerBody.velocity.set(0, 0, 0);
+            playerBody.angularVelocity.set(0, 0, 0);
+        }
+        
+        // Hide player from others while in menu
+        socket.emit('playerPaused');
+        
+        pauseMenu.style.display = 'flex';
+        
+        // Set up event listeners
+        setupPauseMenuListeners();
+    }
+}
+
+// Remove the old event listeners (they will be replaced by setupPauseMenuListeners)
+// ... existing code ...
+
+// Modify the pointer lock event listener
+document.addEventListener('pointerlockchange', () => {
+    const clickToStart = document.getElementById('clickToStart');
+    const coordDisplay = document.getElementById('coordinateDisplay');
+    const leaderboard = document.getElementById('leaderboard');
+    const pauseMenu = document.getElementById('pauseMenu');
+    
+    if (document.pointerLockElement === renderer.domElement) {
+        isGameStarted = true;
+        
+        // Hide UI elements
+        if (clickToStart) clickToStart.style.display = 'none';
+        if (coordDisplay) coordDisplay.style.display = 'block';
+        if (leaderboard) leaderboard.style.display = 'block';
+        if (pauseMenu) pauseMenu.style.display = 'none';
+    } else {
+        // If we're dead, immediately request pointer lock again
+        if (isDead) {
+            requestPointerLockWithRetry();
+        }
+        // Only show pause menu if game was started, not dead, and not exiting
+        else if (isGameStarted && !isExitingGame) {
+            showPauseMenu();
+        }
+    }
+});
+
+// Add helper function for pointer lock with retry
+function requestPointerLockWithRetry(attempts = 0) {
+    if (attempts >= 5) return; // Give up after 5 attempts
+    
+    try {
+        renderer.domElement.requestPointerLock();
+        
+        // Check if it worked after a short delay
+        setTimeout(() => {
+            if (document.pointerLockElement !== renderer.domElement) {
+                // If it didn't work, try again
+                requestPointerLockWithRetry(attempts + 1);
+            }
+        }, 100);
+    } catch (error) {
+        console.error('Error requesting pointer lock:', error);
+    }
+}
 
 document.addEventListener('pointerlockerror', () => {
     console.error('Pointer lock error');
@@ -961,14 +1456,16 @@ document.addEventListener('pointerlockerror', () => {
 
 // Input handling
 document.addEventListener('keydown', (event) => {
-    if (event.key.toLowerCase() in keys) {
-        keys[event.key.toLowerCase()] = true;
+    const key = event.key?.toLowerCase();
+    if (key && key in keys) {
+        keys[key] = true;
     }
 });
 
 document.addEventListener('keyup', (event) => {
-    if (event.key.toLowerCase() in keys) {
-        keys[event.key.toLowerCase()] = false;
+    const key = event.key?.toLowerCase();
+    if (key && key in keys) {
+        keys[key] = false;
     }
 });
 
@@ -984,6 +1481,8 @@ function startGame() {
     try {
         renderer.domElement.requestPointerLock();
         createScreenFlash();
+        createCoordinateDisplay(); // Create coordinate display
+        createLeaderboard(); // Create leaderboard
         // Initialize the snowball meter
         updateSnowballMeter();
     } catch (error) {
@@ -1053,11 +1552,12 @@ function startReload() {
     updateSnowballMeter(); // Update the meter immediately when starting reload
 }
 
-// Modify the click event listener to check snowball count
+// Modify click event listener to check for pause state
 document.addEventListener('click', (e) => {
-    if (!isGameStarted) {
-        startGame();
-    } else if (canThrow && isAlive && !isDead && !isReloading && snowballCount > 0) {
+    // Don't allow shooting if paused or controls are disabled
+    if (isPaused || !controlsEnabled) return;
+
+    if (isGameStarted && canThrow && isAlive && !isDead && !isReloading && snowballCount > 0) {
         const direction = new THREE.Vector3();
         camera.getWorldDirection(direction);
         
@@ -1066,18 +1566,19 @@ document.addEventListener('click', (e) => {
         camera.getWorldPosition(position);
         position.add(direction.clone().multiplyScalar(2));
         
-        // Hide held snowball during throw animation
+        // Hide held snowball immediately
         if (heldSnowball) {
             heldSnowball.visible = false;
         }
         
-        // Create and throw snowball
-        const snowball = createSnowball(position, direction);
+        // Create and throw snowball with shooter ID
+        const snowball = createSnowball(position, direction, socket.id);
         
         // Emit the exact velocity that was applied to the snowball
         socket.emit('throwSnowball', { 
             position: position,
-            velocity: snowball.body.velocity
+            velocity: snowball.body.velocity,
+            shooterId: socket.id
         });
 
         // Decrease snowball count and update UI
@@ -1087,7 +1588,7 @@ document.addEventListener('click', (e) => {
         canThrow = false;
         setTimeout(() => {
             canThrow = true;
-            if (!isReloading) {
+            if (!isReloading && snowballCount > 0) {
                 createHeldSnowball();
             }
         }, 500);
@@ -1122,10 +1623,36 @@ function handleDeath() {
     health = 0;
     updateHealthDisplay();
     
-    // Show death overlay
+    // Show death overlay with animation
     const deathOverlay = document.getElementById('deathOverlay');
-    deathOverlay.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+    const respawnProgressFill = document.getElementById('respawnProgressFill');
+    const respawnTimer = document.getElementById('respawnTimer');
+    const deathMessage = document.getElementById('deathMessage');
+    
     deathOverlay.style.display = 'flex';
+    deathMessage.textContent = 'YOU DIED!';
+    
+    // Start respawn countdown
+    let timeLeft = 3;
+    respawnTimer.textContent = timeLeft;
+    
+    // Update progress bar and timer
+    const startTime = Date.now();
+    const respawnInterval = setInterval(() => {
+        const elapsedTime = Date.now() - startTime;
+        const progress = Math.min(elapsedTime / RESPAWN_DELAY, 1);
+        respawnProgressFill.style.transform = `scaleX(${progress})`;
+        
+        timeLeft = Math.ceil(3 - (elapsedTime / 1000));
+        if (timeLeft > 0) {
+            respawnTimer.textContent = timeLeft;
+        }
+        
+        if (elapsedTime >= RESPAWN_DELAY) {
+            clearInterval(respawnInterval);
+            deathMessage.textContent = 'Respawning...';
+        }
+    }, 50);
     
     // Disable controls
     Object.keys(keys).forEach(key => keys[key] = false);
@@ -1145,14 +1672,23 @@ function updateRespawnTimer() {
 
 // Update the respawnPlayer function
 function respawnPlayer(playerId) {
-    // Use the same getRandomSpawnPosition function that's used for initial spawn
     const spawnPosition = getRandomSpawnPosition();
 
     if (playerId === socket.id) {
+        // Reset all player states
         isDead = false;
         isAlive = true;
         health = MAX_HEALTH;
         updateHealthDisplay();
+        
+        // Reset player's body color
+        if (playerMesh) {
+            playerMesh.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.color.setHex(0xffffff);
+                }
+            });
+        }
         
         if (playerBody) {
             // Ensure exact position update
@@ -1166,126 +1702,83 @@ function respawnPlayer(playerId) {
             );
         }
 
-        // Hide death overlay if it exists
+        // Hide death overlay
         const deathOverlay = document.getElementById('deathOverlay');
-        if (deathOverlay) {
-            deathOverlay.style.display = 'none';
-        }
+        const respawnProgressFill = document.getElementById('respawnProgressFill');
+        deathOverlay.style.display = 'none';
+        respawnProgressFill.style.transform = 'scaleX(0)';
 
         // Re-enable controls
         canThrow = true;
         canJump = true;
+
+        // Notify server of respawn
+        socket.emit('playerRespawned', { id: playerId, position: spawnPosition });
+
+        // Final step: Request pointer lock after a short delay to ensure all states are updated
+        setTimeout(() => {
+            if (document.pointerLockElement !== renderer.domElement) {
+                requestPointerLockWithRetry();
+            }
+        }, 100);
+    } else {
+        // Reset other player's color if they died
+        const otherPlayer = players.get(playerId);
+        if (otherPlayer) {
+            otherPlayer.meshes.forEach((mesh) => {
+                mesh.material = otherPlayer.materials.normal[0];
+            });
+        }
+        socket.emit('playerRespawned', { id: playerId, position: spawnPosition });
     }
-    
-    socket.emit('playerRespawned', { id: playerId, position: spawnPosition });
 }
 
 function getRandomSpawnPosition() {
-    // Generate a random position in quadrant 4 (positive x, positive z)
-    const minX = 20; // Minimum safe distance from center
-    const minZ = 20; // Minimum safe distance from center
-    const maxX = ARENA_SIZE/2 - SAFE_SPAWN_MARGIN; // Maximum safe distance from wall
-    const maxZ = ARENA_SIZE/2 - SAFE_SPAWN_MARGIN; // Maximum safe distance from wall
+    let position;
+    do {
+        // Generate random position within the specified bounds
+        position = {
+            x: 10 + Math.random() * 380, // Random between 10 and 390
+            y: PLAYER_HEIGHT / 2,
+            z: 10 + Math.random() * 380  // Random between 10 and 390
+        };
+    } while (
+        // Check if position is in the fort area (x: [140, 260] and z: [140, 260])
+        (position.x >= 140 && position.x <= 260 && position.z >= 140 && position.z <= 260)
+    );
     
-    return {
-        x: minX + Math.random() * (maxX - minX),
-        y: PLAYER_HEIGHT / 2,
-        z: minZ + Math.random() * (maxZ - minZ)
-    };
+    return position;
 }
 
-// After the updateHealthDisplay function
+// Add after the updateHealthDisplay function
 function createSprintMeter() {
-    // Create container for both meters
-    const metersContainer = document.createElement('div');
-    metersContainer.style.position = 'fixed';
-    metersContainer.style.bottom = '20px';
-    metersContainer.style.left = '20px';
-    metersContainer.style.display = 'flex';
-    metersContainer.style.flexDirection = 'column';
-    metersContainer.style.gap = '10px'; // Space between meters
-
-    // Sprint meter
-    const meterContainer = document.createElement('div');
-    meterContainer.style.width = SPRINT_METER_WIDTH + 'px';
-    meterContainer.style.height = SPRINT_METER_HEIGHT + 'px';
-    meterContainer.style.border = '2px solid white';
-    meterContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-
-    const meterFill = document.createElement('div');
-    meterFill.id = 'sprintMeter';
-    meterFill.style.width = '100%';
-    meterFill.style.height = '100%';
-    meterFill.style.backgroundColor = '#4CAF50';
-    meterFill.style.transition = 'width 0.1s linear';
-
-    meterContainer.appendChild(meterFill);
-    metersContainer.appendChild(meterContainer);
-
-    // Dash meter
-    const dashMeterContainer = document.createElement('div');
-    dashMeterContainer.style.width = SPRINT_METER_WIDTH + 'px';
-    dashMeterContainer.style.height = SPRINT_METER_HEIGHT + 'px';
-    dashMeterContainer.style.border = '2px solid white';
-    dashMeterContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-    dashMeterContainer.style.position = 'relative';
-
-    const dashMeterFill = document.createElement('div');
-    dashMeterFill.id = 'dashMeter';
-    dashMeterFill.style.width = '100%';
-    dashMeterFill.style.height = '100%';
-    dashMeterFill.style.backgroundColor = '#FFA500';
-    dashMeterFill.style.transition = 'width 0.1s linear';
-    dashMeterFill.style.position = 'absolute';
-    dashMeterFill.style.top = '0';
-    dashMeterFill.style.left = '0';
-
-    const dashText = document.createElement('div');
-    dashText.id = 'dashText';
-    dashText.style.position = 'absolute';
-    dashText.style.width = '100%';
-    dashText.style.textAlign = 'center';
-    dashText.style.color = 'white';
-    dashText.style.fontFamily = 'Arial';
-    dashText.style.fontSize = '20px';
-    dashText.style.lineHeight = SPRINT_METER_HEIGHT + 'px';
-    dashText.style.zIndex = '1';
-    dashText.style.textShadow = '1px 1px 2px rgba(0, 0, 0, 0.8)';
-    dashText.textContent = 'DASH READY';
-
-    dashMeterContainer.appendChild(dashMeterFill);
-    dashMeterContainer.appendChild(dashText);
-    metersContainer.appendChild(dashMeterContainer);
-
-    document.body.appendChild(metersContainer);
+    // Function is now empty as we're using the HUD bar meters
 }
 
 function updateSprintMeter() {
-    const meterFill = document.getElementById('sprintMeter');
-    if (meterFill) {
+    const sprintBarFill = document.getElementById('sprintBarFill');
+    if (sprintBarFill) {
         const percentage = (sprintMeter / MAX_SPRINT_DURATION) * 100;
-        meterFill.style.width = percentage + '%';
-        meterFill.style.backgroundColor = percentage < 30 ? '#f44336' : '#4CAF50';
+        sprintBarFill.style.width = percentage + '%';
+        sprintBarFill.style.backgroundColor = percentage < 30 ? '#f44336' : '#DBA507';
     }
 }
 
 function updateDashMeter() {
-    const dashMeterFill = document.getElementById('dashMeter');
+    const dashBarFill = document.getElementById('dashBarFill');
     const dashText = document.getElementById('dashText');
-    if (dashMeterFill && dashText) {
+    if (dashBarFill && dashText) {
         const now = Date.now();
         
         if (!hasTouchedGroundSinceDash) {
-            // If we haven't touched ground since last dash, show "TOUCH GROUND"
-            dashMeterFill.style.width = '0%';
+            dashBarFill.style.width = '0%';
             dashText.textContent = 'TOUCH GROUND';
             canDash = false;
-            lastDashTime = now; // Reset the timer when touching ground
+            lastDashTime = now;
         } else {
-            // Only start counting recharge time after touching ground
             const timeSinceLastDash = now - lastDashTime;
             const percentage = Math.min(100, (timeSinceLastDash / DASH_COOLDOWN) * 100);
-            dashMeterFill.style.width = percentage + '%';
+            dashBarFill.style.width = percentage + '%';
             
             if (percentage >= 100) {
                 dashText.textContent = 'DASH READY';
@@ -1335,9 +1828,236 @@ function createScreenFlash() {
     screenFlashMaterial = flashMaterial;
 }
 
+// Add after the createScreenFlash function
+function createCoordinateDisplay() {
+    // Check if the display already exists
+    if (document.getElementById('coordinateDisplay')) return;
+
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.top = '20px';
+    container.style.left = '20px'; // Changed from right to left
+    container.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    container.style.color = 'white';
+    container.style.padding = '10px 15px';
+    container.style.borderRadius = '5px';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.fontSize = '16px';
+    container.style.zIndex = '1000';
+    container.id = 'coordinateDisplay';
+    container.style.display = 'none'; // Hide initially
+    document.body.appendChild(container);
+}
+
+function updateCoordinateDisplay() {
+    if (!playerBody || !isGameStarted) return;
+    
+    const container = document.getElementById('coordinateDisplay');
+    if (!container) return;
+    
+    const x = Math.round(playerBody.position.x);
+    const z = Math.round(playerBody.position.z);
+    
+    container.innerHTML = `X: ${x}<br>Y: ${z}`;
+}
+
+// Create leaderboard UI
+function createLeaderboard() {
+    const container = document.createElement('div');
+    container.id = 'leaderboard';
+    container.style.position = 'fixed';
+    container.style.top = '20px';
+    container.style.right = '20px';
+    container.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+    container.style.padding = '15px';
+    container.style.color = 'white';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.minWidth = '250px';
+    container.style.display = 'none';
+    container.style.borderRadius = '10px';
+    container.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.3)';
+    container.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+    container.style.backdropFilter = 'blur(5px)';
+
+    const title = document.createElement('div');
+    title.textContent = 'LEADERBOARD';
+    title.style.textAlign = 'center';
+    title.style.marginBottom = '15px';
+    title.style.fontWeight = 'bold';
+    title.style.fontSize = '18px';
+    title.style.letterSpacing = '2px';
+    title.style.color = '#FFD700';
+    title.style.textShadow = '0 0 10px rgba(255, 215, 0, 0.5)';
+    title.style.paddingBottom = '10px';
+    title.style.borderBottom = '2px solid rgba(255, 215, 0, 0.3)';
+    container.appendChild(title);
+
+    const list = document.createElement('div');
+    list.id = 'leaderboardList';
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '8px';
+    container.appendChild(list);
+
+    document.body.appendChild(container);
+}
+
+// Simple leaderboard update function
+function updateLeaderboard() {
+    const list = document.getElementById('leaderboardList');
+    if (!list) return;
+
+    // Clear the list
+    list.innerHTML = '';
+
+    // Create a Map to track unique players by name
+    const uniquePlayers = new Map();
+
+    // First pass: collect all players with their highest kill count
+    playerKills.forEach((kills, id) => {
+        let name;
+        if (id === socket.id) {
+            const nameInput = document.getElementById('nameInput');
+            name = nameInput ? nameInput.value.trim() : 'Player';
+        } else {
+            name = playerNames.get(id) || 'Unknown';
+        }
+
+        // If this player name already exists, only update if the new kill count is higher
+        if (uniquePlayers.has(name)) {
+            const existing = uniquePlayers.get(name);
+            if (kills > existing.kills) {
+                uniquePlayers.set(name, {
+                    name,
+                    kills,
+                    isLocalPlayer: id === socket.id
+                });
+            }
+        } else {
+            uniquePlayers.set(name, {
+                name,
+                kills,
+                isLocalPlayer: id === socket.id
+            });
+        }
+    });
+
+    // Convert to array and sort by kills
+    const players = Array.from(uniquePlayers.values())
+        .sort((a, b) => b.kills - a.kills);
+
+    // Show top 3 players
+    for (let i = 0; i < 3; i++) {
+        const entry = document.createElement('div');
+        entry.style.padding = '10px';
+        entry.style.marginBottom = '5px';
+        entry.style.borderRadius = '5px';
+        entry.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+        entry.style.transition = 'all 0.3s ease';
+        entry.style.display = 'flex';
+        entry.style.justifyContent = 'space-between';
+        entry.style.alignItems = 'center';
+
+        if (i < players.length) {
+            const player = players[i];
+            
+            // Create rank number
+            const rank = document.createElement('span');
+            rank.style.fontWeight = 'bold';
+            rank.style.color = '#FFD700';
+            rank.style.marginRight = '10px';
+            rank.textContent = `#${i + 1}`;
+            entry.appendChild(rank);
+
+            // Create player info container
+            const playerInfo = document.createElement('div');
+            playerInfo.style.flex = '1';
+            playerInfo.style.display = 'flex';
+            playerInfo.style.justifyContent = 'space-between';
+            playerInfo.style.alignItems = 'center';
+
+            // Create name span
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = player.name;
+            nameSpan.style.color = player.isLocalPlayer ? '#00FF00' : 'white';
+            nameSpan.style.fontWeight = player.isLocalPlayer ? 'bold' : 'normal';
+            nameSpan.style.textShadow = player.isLocalPlayer ? '0 0 5px rgba(0, 255, 0, 0.5)' : 'none';
+
+            // Create kills span
+            const killsSpan = document.createElement('span');
+            killsSpan.textContent = `${player.kills} kills`;
+            killsSpan.style.color = '#FFD700';
+            killsSpan.style.fontWeight = 'bold';
+            killsSpan.style.marginLeft = '10px';
+
+            playerInfo.appendChild(nameSpan);
+            playerInfo.appendChild(killsSpan);
+            entry.appendChild(playerInfo);
+
+            // Add hover effect
+            entry.addEventListener('mouseover', () => {
+                entry.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                entry.style.transform = 'translateX(-5px)';
+            });
+
+            entry.addEventListener('mouseout', () => {
+                entry.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                entry.style.transform = 'translateX(0)';
+            });
+        } else {
+            entry.textContent = '---';
+            entry.style.color = 'rgba(255, 255, 255, 0.3)';
+            entry.style.fontStyle = 'italic';
+        }
+
+        list.appendChild(entry);
+    }
+}
+
+// Update leaderboard on kill
+socket.on('killUpdate', (data) => {
+    // Store both killer and victim names
+    if (data.killerName) {
+        playerNames.set(data.killerId, data.killerName);
+    }
+    if (data.victimName) {
+        playerNames.set(data.victimId, data.victimName);
+    }
+    
+    playerKills.set(data.killerId, data.kills);
+    updateLeaderboard();
+});
+
+// Update when players join
+socket.on('currentPlayers', (players) => {
+    Object.keys(players).forEach((id) => {
+        playerNames.set(id, players[id].name);
+        playerKills.set(id, players[id].kills || 0);
+    });
+    updateLeaderboard();
+});
+
+// Update when players leave
+socket.on('playerDisconnected', (playerId) => {
+    playerKills.delete(playerId);
+    playerNames.delete(playerId);
+    updateLeaderboard();
+});
+
 // Add the game loop
 function animate() {
     requestAnimationFrame(animate);
+
+    // When paused, only render the scene and pause menu
+    if (isPaused) {
+        // Disable all player movement and physics
+        if (playerBody) {
+            playerBody.velocity.set(0, 0, 0);
+            playerBody.angularVelocity.set(0, 0, 0);
+        }
+        renderer.render(scene, camera);
+        return;
+    }
 
     // Add reload animation update
     updateReloadAnimation();
@@ -1346,6 +2066,21 @@ function animate() {
     const fixedTimeStep = 1.0 / 60.0;
     const maxSubSteps = 3;
     world.step(fixedTimeStep, fixedTimeStep, maxSubSteps);
+
+    // Update player positions including dead players
+    players.forEach((player, id) => {
+        if (player.mesh && player.body) {
+            // For dead players, only update position (they're affected by physics)
+            if (player.isDead) {
+                player.mesh.position.copy(player.body.position);
+                player.mesh.quaternion.copy(player.body.quaternion);
+            } else {
+                // Normal position update for living players
+                player.mesh.position.copy(player.body.position);
+                player.mesh.quaternion.copy(player.body.quaternion);
+            }
+        }
+    });
 
     // Update player movement
     if (isAlive && isGameStarted && playerBody) {
@@ -1363,11 +2098,11 @@ function animate() {
             const player = players.get(socket.id);
             if (player && player.bodyParts) {
                 const scale = CROUCHED_HEIGHT / PLAYER_HEIGHT;
-                player.bodyParts.upper.position.y *= scale;
-                player.bodyParts.lower.position.y *= scale;
+                player.bodyParts.body.position.y *= scale;
                 player.bodyParts.head.position.y *= scale;
-                player.bodyParts.leftArm.position.y *= scale;
-                player.bodyParts.rightArm.position.y *= scale;
+                player.bodyParts.leftEye.position.y *= scale;
+                player.bodyParts.rightEye.position.y *= scale;
+                player.bodyParts.nose.position.y *= scale;
                 player.mesh.scale.y = scale;
             }
             
@@ -1389,11 +2124,11 @@ function animate() {
                 // Restore visual model
                 const player = players.get(socket.id);
                 if (player && player.bodyParts) {
-                    player.bodyParts.upper.position.y = PLAYER_HEIGHT / 2 + 0.4;
-                    player.bodyParts.lower.position.y = PLAYER_HEIGHT / 4;
-                    player.bodyParts.head.position.y = PLAYER_HEIGHT / 2 + 1.2;
-                    player.bodyParts.leftArm.position.y = PLAYER_HEIGHT / 2 + 0.4;
-                    player.bodyParts.rightArm.position.y = PLAYER_HEIGHT / 2 + 0.4;
+                    player.bodyParts.body.position.y = PLAYER_HEIGHT / 3;
+                    player.bodyParts.head.position.y = PLAYER_HEIGHT / 3 + 0.8;  // Position head above body with slight intersection
+                    player.bodyParts.leftEye.position.y = PLAYER_HEIGHT / 3 + 0.9;
+                    player.bodyParts.rightEye.position.y = PLAYER_HEIGHT / 3 + 0.9;
+                    player.bodyParts.nose.position.y = PLAYER_HEIGHT / 3 + 0.8;
                     player.mesh.scale.y = 1;
                 }
                 
@@ -1644,11 +2379,12 @@ function animate() {
                     hitRegistered = true;
                     snowball.hasHit = true;
                     
-                    // Hit confirmed
+                    // Hit confirmed - include shooter ID
                     socket.emit('playerHit', { 
-                        id, 
+                        id,
                         position: snowball.mesh.position.clone(),
-                        velocity: snowball.body.velocity.clone()
+                        velocity: snowball.body.velocity.clone(),
+                        shooterId: snowball.shooterId
                     });
                     
                     // Create hit effect
@@ -1681,11 +2417,626 @@ function animate() {
         });
     }
 
+    // Update name labels to face camera
+    updateNameLabels();
+
+    // Update coordinate display
+    updateCoordinateDisplay();
+
     renderer.render(scene, camera);
 }
 
 // Start game
-createPlayer(socket.id, getRandomSpawnPosition());
-createSprintMeter();
+// createPlayer(socket.id, getRandomSpawnPosition());
+
+// Add title screen handling
+const titleScreen = document.getElementById('titleScreen');
+const playButton = document.getElementById('playButton');
+const healthDisplay = document.getElementById('healthDisplay');
+const snowballMeter = document.getElementById('snowballMeter');
+const deathOverlay = document.getElementById('deathOverlay');
+
+// Hide game UI elements initially
+healthDisplay.style.display = 'none';
+snowballMeter.style.display = 'none';
+deathOverlay.style.display = 'none';
+
+// Handle play button click
+playButton.addEventListener('click', () => {
+    const playerName = document.getElementById('nameInput').value.trim() || 'Player';
+    
+    // Send player name to server first
+    socket.emit('playerName', playerName);
+    
+    // Initialize local player's kills and name
+    playerKills.set(socket.id, 0);
+    playerNames.set(socket.id, playerName);
+    
+    // Hide UI elements
+    titleScreen.style.display = 'none';
+    healthDisplay.style.display = 'block';
+    snowballMeter.style.display = 'block';
+    
+    // Create local player
+    const player = createPlayer(socket.id, getRandomSpawnPosition(), playerName);
+    players.set(socket.id, player);
+    
+    // Create and show game log
+    createGameLog();
+    document.getElementById('gameLog').style.display = 'block';
+    
+    // Start the game and request pointer lock
+    startGame();
+    updateLeaderboard();
+    
+    // Add join message for local player
+    addGameLogMessage(`You have joined the game`, 'join');
+});
+
+// Start game
 updateSnowballMeter();
 animate(); 
+
+// Add kill update handler
+socket.on('killUpdate', (data) => {
+    console.log('Kill update received:', data);
+    
+    // Make sure kills is a number
+    const kills = typeof data.kills === 'number' ? data.kills : 0;
+    
+    // Update killer's kill count
+    playerKills.set(data.killerId, kills);
+    
+    // Update personal kill counter if the kill was by the local player
+    if (data.killerId === socket.id) {
+        updateKillCounter(kills);
+    }
+    
+    console.log(`Updated kills for ${data.killerName}: ${kills}`);
+    console.log('Current kill counts:', Array.from(playerKills.entries()));
+    
+    // Update the leaderboard immediately
+    updateLeaderboard();
+    
+    // Display kill feed message
+    const killFeedMessage = `${data.killerName} eliminated ${data.victimName}`;
+    
+    // Create kill feed element
+    const killFeed = document.createElement('div');
+    killFeed.style.position = 'fixed';
+    killFeed.style.right = '20px';
+    killFeed.style.top = '120px';
+    killFeed.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    killFeed.style.color = 'white';
+    killFeed.style.padding = '5px 10px';
+    killFeed.style.borderRadius = '5px';
+    killFeed.style.fontFamily = 'Arial, sans-serif';
+    killFeed.style.fontSize = '14px';
+    killFeed.style.zIndex = '1000';
+    killFeed.textContent = killFeedMessage;
+    document.body.appendChild(killFeed);
+    
+    // Remove kill feed message after 3 seconds
+    setTimeout(() => {
+        document.body.removeChild(killFeed);
+    }, 3000);
+});
+
+// Display kill feed message
+function displayKillFeed(message) {
+    const killFeedElement = document.getElementById('kill-feed');
+    if (!killFeedElement) return;
+    
+    const messageElement = document.createElement('div');
+    messageElement.className = 'kill-feed-message';
+    messageElement.textContent = message;
+    
+    killFeedElement.appendChild(messageElement);
+    
+    // Remove message after 3 seconds
+    setTimeout(() => {
+        messageElement.remove();
+    }, 3000);
+}
+
+// Handle new player connections
+socket.on('currentPlayers', (players) => {
+    Object.keys(players).forEach((id) => {
+        const player = players[id];
+        playerNames.set(id, player.name);
+        if (player.kills !== undefined) {
+            playerKills.set(id, player.kills);
+        }
+    });
+    updateLeaderboard();
+});
+
+// Handle player disconnection
+socket.on('playerDisconnected', (playerId) => {
+    playerKills.delete(playerId);
+    playerNames.delete(playerId);
+    updateLeaderboard();
+});
+
+socket.on('connect', () => {
+    console.log('Connected to server');
+});
+
+function createGameLog() {
+    if (document.getElementById('gameLog')) return;
+
+    const container = document.createElement('div');
+    container.id = 'gameLog';
+    container.style.position = 'fixed';
+    container.style.left = '20px';
+    container.style.bottom = '200px';
+    container.style.width = '400px';
+    container.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    container.style.borderRadius = '5px';
+    container.style.padding = '10px';
+    container.style.zIndex = '1000';
+    container.style.display = 'none';
+
+    // Add header
+    const header = document.createElement('div');
+    header.className = 'gameLogHeader';
+    header.textContent = 'KILL FEED';
+    header.style.textAlign = 'center';
+    header.style.fontWeight = 'bold';
+    header.style.marginBottom = '10px';
+    header.style.padding = '5px';
+    header.style.borderBottom = '2px solid rgba(255, 255, 255, 0.2)';
+    container.appendChild(header);
+
+    // Add content container
+    const content = document.createElement('div');
+    content.className = 'gameLogContent';
+    content.style.height = '150px';
+    content.style.overflowY = 'hidden';
+    content.style.fontFamily = 'Consolas, monospace';
+    content.style.fontSize = '14px';
+    container.appendChild(content);
+
+    document.body.appendChild(container);
+}
+
+function addGameLogMessage(message, type = 'default') {
+    const gameLog = document.getElementById('gameLog');
+    if (!gameLog) return;
+
+    const gameLogContent = document.querySelector('.gameLogContent');
+    if (!gameLogContent) return;
+
+    // Create a unique message ID
+    const messageId = `${type}_${message}`;
+    
+    // If this exact message was already processed, ignore it
+    if (processedMessageIds.has(messageId)) {
+        return;
+    }
+    
+    // Add to processed messages
+    processedMessageIds.add(messageId);
+    
+    // Clear the message ID after a short delay
+    setTimeout(() => {
+        processedMessageIds.delete(messageId);
+    }, 1000);
+
+    const messageElement = document.createElement('div');
+    messageElement.className = `gameLogEntry ${type}`;
+    messageElement.style.padding = '5px 10px';
+    messageElement.style.marginBottom = '5px';
+    messageElement.style.borderRadius = '3px';
+    messageElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    messageElement.style.borderLeft = '3px solid';
+
+    switch(type) {
+        case 'kill':
+            messageElement.style.borderLeftColor = '#ff4444';
+            messageElement.style.color = '#ff4444';
+            break;
+        case 'join':
+            messageElement.style.borderLeftColor = '#44ff44';
+            messageElement.style.color = '#44ff44';
+            break;
+        case 'leave':
+            messageElement.style.borderLeftColor = '#ffff44';
+            messageElement.style.color = '#ffff44';
+            break;
+        default:
+            messageElement.style.borderLeftColor = '#ffffff';
+            messageElement.style.color = '#ffffff';
+    }
+
+    messageElement.textContent = message;
+    gameLogContent.appendChild(messageElement);
+
+    // Keep only last 5 messages
+    while (gameLogContent.children.length > 5) {
+        gameLogContent.removeChild(gameLogContent.firstChild);
+    }
+
+    // Auto-scroll to bottom
+    gameLogContent.scrollTop = gameLogContent.scrollHeight;
+
+    // Auto-delete message after 10 seconds
+    setTimeout(() => {
+        if (messageElement && messageElement.parentNode === gameLogContent) {
+            gameLogContent.removeChild(messageElement);
+        }
+    }, 10000);
+}
+
+// ... existing code ...
+
+// Modify the playButton click handler to show game log
+playButton.addEventListener('click', () => {
+    const playerName = document.getElementById('nameInput').value.trim() || 'Player';
+    
+    socket.emit('playerName', playerName);
+    playerKills.set(socket.id, 0);
+    playerNames.set(socket.id, playerName);
+    
+    titleScreen.style.display = 'none';
+    healthDisplay.style.display = 'block';
+    snowballMeter.style.display = 'block';
+    
+    const player = createPlayer(socket.id, getRandomSpawnPosition(), playerName);
+    players.set(socket.id, player);
+    
+    // Create and show game log
+    createGameLog();
+    document.getElementById('gameLog').style.display = 'block';
+    
+    startGame();
+    updateLeaderboard();
+    
+    // Add join message for local player
+    addGameLogMessage(`You have joined the game`, 'join');
+});
+
+// Modify socket event handlers to add game log messages
+socket.on('newPlayer', (playerInfo) => {
+    const player = createPlayer(playerInfo.id, playerInfo.position, playerInfo.name);
+    players.set(playerInfo.id, player);
+    playerNames.set(playerInfo.id, playerInfo.name || 'Unknown');
+    playerKills.set(playerInfo.id, playerInfo.kills || 0);
+    updateLeaderboard();
+    
+    // Add join message
+    addGameLogMessage(`${playerInfo.name || 'Unknown'} has joined the game`, 'join');
+});
+
+socket.on('killUpdate', (data) => {
+    console.log('Kill update received:', data);
+    
+    const kills = typeof data.kills === 'number' ? data.kills : 0;
+    playerKills.set(data.killerId, kills);
+    
+    // Update personal kill counter if the kill was by the local player
+    if (data.killerId === socket.id) {
+        updateKillCounter(kills);
+    }
+    
+    console.log(`Updated kills for ${data.killerName}: ${kills}`);
+    console.log('Current kill counts:', Array.from(playerKills.entries()));
+    
+    updateLeaderboard();
+    
+    // Add kill message to game log
+    addGameLogMessage(`${data.killerName} eliminated ${data.victimName}`, 'kill');
+    
+    // Create kill feed message
+    const killFeed = document.createElement('div');
+    killFeed.style.position = 'fixed';
+    killFeed.style.right = '20px';
+    killFeed.style.top = '120px';
+    killFeed.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    killFeed.style.color = 'white';
+    killFeed.style.padding = '5px 10px';
+    killFeed.style.borderRadius = '5px';
+    killFeed.style.fontFamily = 'Arial, sans-serif';
+    killFeed.style.fontSize = '14px';
+    killFeed.style.zIndex = '1000';
+    killFeed.textContent = `${data.killerName} eliminated ${data.victimName}`;
+    document.body.appendChild(killFeed);
+    
+    // Remove kill feed message after 3 seconds
+    setTimeout(() => {
+        document.body.removeChild(killFeed);
+    }, 3000);
+});
+
+socket.on('playerDisconnected', (playerId) => {
+    const playerName = playerNames.get(playerId) || 'Unknown';
+    playerKills.delete(playerId);
+    playerNames.delete(playerId);
+    updateLeaderboard();
+    
+    // Add leave message
+    addGameLogMessage(`${playerName} has left the game`, 'leave');
+    
+    const player = players.get(playerId);
+    if (player) {
+        scene.remove(player.mesh);
+        world.removeBody(player.body);
+        players.delete(playerId);
+    }
+});
+
+
+// Add event listeners for pause menu buttons
+document.getElementById('resumeButton').addEventListener('click', (e) => {
+    // Prevent the click from triggering snowball throw
+    e.stopPropagation();
+    
+    // Disable controls until fully restored
+    controlsEnabled = false;
+    
+    // Hide pause menu immediately
+    const pauseMenu = document.getElementById('pauseMenu');
+    if (pauseMenu) {
+        pauseMenu.style.display = 'none';
+    }
+    
+    // Function to attempt pointer lock
+    const attemptPointerLock = () => {
+        renderer.domElement.requestPointerLock();
+        
+        // Check if pointer lock was successful after a short delay
+        setTimeout(() => {
+            if (document.pointerLockElement !== renderer.domElement) {
+                // If not successful, try again
+                attemptPointerLock();
+            }
+        }, 100);
+    };
+    
+    // Start the first attempt after menu is hidden
+    setTimeout(() => {
+        attemptPointerLock();
+    }, 50);
+});
+
+document.getElementById('exitButton').addEventListener('click', () => {
+    isExitingGame = true;
+    returnToTitleScreen();
+});
+
+// Add ESC key handler
+document.addEventListener('keydown', (event) => {
+    // Only allow ESC key for pausing if not dead
+    if (event.key === 'Escape' && isGameStarted && !isDead) {
+        if (document.pointerLockElement === renderer.domElement) {
+            document.exitPointerLock();
+        }
+        return;
+    }
+
+    // Don't process other keys if paused or controls are disabled
+    if (isPaused || !controlsEnabled) return;
+
+    const key = event.key?.toLowerCase();
+    if (key && key in keys) {
+        keys[key] = true;
+    }
+    
+    // Handle reload key
+    if (key === 'r') {
+        startReload();
+    }
+});
+
+// Add after other socket event handlers
+
+socket.on('playerHidden', (playerId) => {
+    const player = players.get(playerId);
+    if (player) {
+        player.mesh.visible = false;
+    }
+});
+
+socket.on('playerReturned', (data) => {
+    const player = players.get(data.id);
+    if (player) {
+        player.mesh.visible = true;
+        player.body.position.copy(data.position);
+        player.mesh.position.copy(data.position);
+    }
+});
+
+// For sprint bar
+const sprintBarFill = document.getElementById('sprintBarFill');
+sprintBarFill.style.width = `${(sprintMeter / MAX_SPRINT_DURATION) * 100}%`;
+
+// For dash bar
+const dashBarFill = document.getElementById('dashBarFill');
+dashBarFill.style.width = `${((DASH_COOLDOWN - (Date.now() - lastDashTime)) / DASH_COOLDOWN) * 100}%`;
+
+function updateKillCounter(kills) {
+    const killCounter = document.getElementById('killCounter');
+    if (killCounter) {
+        killCounter.textContent = `Kills: ${kills}`;
+    }
+}
+
+// Add after player variables
+const messageCache = new Set();
+const MESSAGE_CACHE_TIMEOUT = 2000; // 2 seconds
+
+
+// Modify socket event handlers
+socket.on('newPlayer', (playerInfo) => {
+    // Create unique ID for join message
+    const joinMessageId = `join_${playerInfo.id}_${Date.now()}`;
+    
+    // Only proceed if we haven't processed this player recently
+    if (!players.has(playerInfo.id)) {
+        const player = createPlayer(playerInfo.id, playerInfo.position, playerInfo.name);
+        players.set(playerInfo.id, player);
+        playerNames.set(playerInfo.id, playerInfo.name || 'Unknown');
+        playerKills.set(playerInfo.id, playerInfo.kills || 0);
+        updateLeaderboard();
+        
+        // Add join message with unique ID
+        addGameLogMessage(`${playerInfo.name || 'Unknown'} has joined the game`, 'join', joinMessageId);
+    }
+});
+
+socket.on('playerDisconnected', (playerId) => {
+    // Create unique ID for leave message
+    const leaveMessageId = `leave_${playerId}_${Date.now()}`;
+    
+    const playerName = playerNames.get(playerId) || 'Unknown';
+    const player = players.get(playerId);
+    
+    // Add leave message with unique ID
+    addGameLogMessage(`${playerName} has left the game`, 'leave', leaveMessageId);
+    
+    if (player) {
+        scene.remove(player.mesh);
+        world.removeBody(player.body);
+        players.delete(playerId);
+    }
+    
+    playerKills.delete(playerId);
+    playerNames.delete(playerId);
+    updateLeaderboard();
+});
+
+socket.on('killUpdate', (data) => {
+    // Create unique ID for kill message
+    const killMessageId = `kill_${data.killerId}_${data.victimId}_${Date.now()}`;
+    
+    const kills = typeof data.kills === 'number' ? data.kills : 0;
+    playerKills.set(data.killerId, kills);
+    
+    if (data.killerId === socket.id) {
+        updateKillCounter(kills);
+    }
+    
+    updateLeaderboard();
+    
+    // Add kill message with unique ID
+    addGameLogMessage(`${data.killerName} eliminated ${data.victimName}`, 'kill', killMessageId);
+});
+
+// Update the play button click handler
+playButton.addEventListener('click', () => {
+    const playerName = document.getElementById('nameInput').value.trim() || 'Player';
+    
+    socket.emit('playerName', playerName);
+    playerKills.set(socket.id, 0);
+    playerNames.set(socket.id, playerName);
+    
+    titleScreen.style.display = 'none';
+    healthDisplay.style.display = 'block';
+    snowballMeter.style.display = 'block';
+    
+    const player = createPlayer(socket.id, getRandomSpawnPosition(), playerName);
+    players.set(socket.id, player);
+    
+    createGameLog();
+    document.getElementById('gameLog').style.display = 'block';
+    
+    startGame();
+    updateLeaderboard();
+    
+    // Add join message with unique ID for local player
+    const localJoinId = `join_${socket.id}_${Date.now()}`;
+    addGameLogMessage(`You have joined the game`, 'join', localJoinId);
+});
+
+// Add after player variables
+const processedMessageIds = new Set();
+
+// Remove all duplicate event listeners and keep only one set
+socket.removeAllListeners('newPlayer');
+socket.removeAllListeners('playerDisconnected');
+socket.removeAllListeners('killUpdate');
+
+// Add single event listener for each event type
+socket.on('newPlayer', (playerInfo) => {
+    if (!players.has(playerInfo.id)) {
+        const player = createPlayer(playerInfo.id, playerInfo.position, playerInfo.name);
+        players.set(playerInfo.id, player);
+        playerNames.set(playerInfo.id, playerInfo.name || 'Unknown');
+        playerKills.set(playerInfo.id, playerInfo.kills || 0);
+        updateLeaderboard();
+        
+        addGameLogMessage(`${playerInfo.name || 'Unknown'} has joined the game`, 'join');
+    }
+});
+
+socket.on('playerDisconnected', (playerId) => {
+    const playerName = playerNames.get(playerId) || 'Unknown';
+    const player = players.get(playerId);
+    
+    addGameLogMessage(`${playerName} has left the game`, 'leave');
+    
+    if (player) {
+        scene.remove(player.mesh);
+        world.removeBody(player.body);
+        players.delete(playerId);
+    }
+    
+    playerKills.delete(playerId);
+    playerNames.delete(playerId);
+    updateLeaderboard();
+});
+
+socket.on('killUpdate', (data) => {
+    const kills = typeof data.kills === 'number' ? data.kills : 0;
+    playerKills.set(data.killerId, kills);
+    
+    if (data.killerId === socket.id) {
+        updateKillCounter(kills);
+    }
+    
+    updateLeaderboard();
+    addGameLogMessage(`${data.killerName} eliminated ${data.victimName}`, 'kill');
+});
+
+// Add cleanup handler for browser tab closure
+window.addEventListener('beforeunload', () => {
+    // Notify server that player has left
+    socket.emit('playerDisconnected', socket.id);
+    
+    // Clean up local player data
+    const player = players.get(socket.id);
+    if (player) {
+        scene.remove(player.mesh);
+        world.removeBody(player.body);
+        players.delete(socket.id);
+    }
+    
+    playerKills.delete(socket.id);
+    playerNames.delete(socket.id);
+});
+
+// Handle play button click
+playButton.addEventListener('click', () => {
+    const playerName = document.getElementById('nameInput').value.trim() || 'Player';
+    
+    socket.emit('playerName', playerName);
+    playerKills.set(socket.id, 0);
+    playerNames.set(socket.id, playerName);
+    
+    titleScreen.style.display = 'none';
+    healthDisplay.style.display = 'block';
+    snowballMeter.style.display = 'block';
+    
+    const player = createPlayer(socket.id, getRandomSpawnPosition(), playerName);
+    players.set(socket.id, player);
+    
+    createGameLog();
+    document.getElementById('gameLog').style.display = 'block';
+    
+    startGame();
+    updateLeaderboard();
+    
+    addGameLogMessage(`You have joined the game`, 'join');
+});
+
+
