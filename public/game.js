@@ -1172,6 +1172,10 @@ socket.on('playerRespawn', (data) => {
         health = MAX_HEALTH;
         updateHealthDisplay();
         
+        // Reset snowball count to maximum
+        snowballCount = MAX_SNOWBALLS;
+        updateSnowballMeter();
+        
         // Force position update for local player
         playerBody.position.copy(data.position);
         playerBody.velocity.set(0, 0, 0);
@@ -1189,6 +1193,9 @@ socket.on('playerRespawn', (data) => {
         canJump = true;
         isAlive = true;
         isDead = false;
+        
+        // Create held snowball since we have full ammo
+        createHeldSnowball();
     } else if (player) {
         // Reset other player's state
         player.isDead = false;
