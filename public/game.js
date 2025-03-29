@@ -128,17 +128,17 @@ scene.add(camera);
 const SNOWBALL_RADIUS = 0.15;
 const PLAYER_HEIGHT = 2;
 const CROUCHED_HEIGHT = 1; // Height when crouching
-const MOVEMENT_SPEED = 12;  // Base movement speed for all players
-const SPRINT_SPEED = 18;   // Sprint speed for all players
-const CROUCH_SPEED = 4; // Speed while crouching
+const MOVEMENT_SPEED = 720;  // Base movement speed for all players (12 * 60 to compensate for deltaTime)
+const SPRINT_SPEED = 1080;   // Sprint speed for all players (18 * 60)
+const CROUCH_SPEED = 240; // Speed while crouching (4 * 60)
 const ACCELERATION = 150;   // Higher acceleration
 const AIR_ACCELERATION = 30;  // Better air control
-const MAX_VELOCITY = 25;    // Higher max velocity
-const GROUND_FRICTION = 0.05;  // Much lower ground friction
+const MAX_VELOCITY = 30;    // Higher max velocity
+const GROUND_FRICTION = 3.00    ;  // Much lower ground friction
 const AIR_FRICTION = 0.01;   // Lower air friction
 const THROW_FORCE = 40;
 const MOUSE_SENSITIVITY = 0.001;
-const JUMP_FORCE = 10;  // Slightly stronger jump
+const JUMP_FORCE = 600;  // Jump force (10 * 60)
 const JUMP_COOLDOWN = 500;
 const SNOWBALL_SPEED = 70; // Increased speed
 const SNOWBALL_GRAVITY = -4.91; // Reduced gravity effect
@@ -248,7 +248,7 @@ const heightLimitBody = new CANNON.Body({
     material: terrainMaterial,
     collisionFilterGroup: COLLISION_GROUPS.TERRAIN,
     collisionFilterMask: COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.SNOWBALL,
-    position: new CANNON.Vec3(0, 60, 0) // Position at 60 units high
+    position: new CANNON.Vec3(0, 60, 0) 
 });
 // Rotate the height limit plane to face downward
 heightLimitBody.quaternion.setFromEuler(Math.PI / 2, 0, 0);
@@ -318,7 +318,7 @@ const MAX_WALL_INSTANCES = 4;
 
 function createWallInstances() {
     // Create base wall geometry
-    const wallGeometry = new THREE.BoxGeometry(1, 60, 1);
+    const wallGeometry = new THREE.BoxGeometry(1, 60, 1); // Changed from 60 to 60 units high
     const wallMaterial = new THREE.MeshStandardMaterial({
         color: 0x808080,
         roughness: 0.7,
@@ -471,28 +471,38 @@ let treeInstanceCount = 0;
 const MAX_TREE_INSTANCES = 500;
 
 function createTreeInstances() {
-    // Create base tree geometry
-    const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.5, 4, 8);
+    // Create base tree geometry with reduced complexity
+    const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.5, 4, 6); // Reduced segments from 8 to 6
     const trunkMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x4A2B0F,
         roughness: 0.9,
         metalness: 0.1
     });
 
-    const coneGeometry1 = new THREE.ConeGeometry(2, 4, 8);
-    const coneGeometry2 = new THREE.ConeGeometry(1.6, 3, 8);
-    const coneGeometry3 = new THREE.ConeGeometry(1.2, 2, 8);
+    // Simplified tree geometry with fewer segments
+    const coneGeometry1 = new THREE.ConeGeometry(2, 4, 6); // Reduced segments from 8 to 6
+    const coneGeometry2 = new THREE.ConeGeometry(1.6, 3, 6);
+    const coneGeometry3 = new THREE.ConeGeometry(1.2, 2, 6);
     const treeMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x0B4619,
         roughness: 0.8,
         metalness: 0.1
     });
 
-    // Create instanced meshes
+    // Create instanced meshes with proper buffer initialization
     const trunkInstanced = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, MAX_TREE_INSTANCES);
     const cone1Instanced = new THREE.InstancedMesh(coneGeometry1, treeMaterial, MAX_TREE_INSTANCES);
     const cone2Instanced = new THREE.InstancedMesh(coneGeometry2, treeMaterial, MAX_TREE_INSTANCES);
     const cone3Instanced = new THREE.InstancedMesh(coneGeometry3, treeMaterial, MAX_TREE_INSTANCES);
+
+    // Initialize instance matrices
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < MAX_TREE_INSTANCES; i++) {
+        trunkInstanced.setMatrixAt(i, dummy.matrix);
+        cone1Instanced.setMatrixAt(i, dummy.matrix);
+        cone2Instanced.setMatrixAt(i, dummy.matrix);
+        cone3Instanced.setMatrixAt(i, dummy.matrix);
+    }
 
     // Create a group for all tree instances
     treeInstances = new THREE.Group();
@@ -507,6 +517,12 @@ function createTreeInstances() {
 function createTree(x, z) {
     if (!treeInstances) {
         createTreeInstances();
+    }
+
+    // Check if we've exceeded the maximum number of instances
+    if (treeInstanceCount >= MAX_TREE_INSTANCES) {
+        console.warn('Maximum tree instances reached');
+        return;
     }
 
     const matrix = new THREE.Matrix4();
@@ -533,11 +549,17 @@ function createTree(x, z) {
     matrix.compose(position, quaternion, scale);
     treeInstances.children[3].setMatrixAt(treeInstanceCount, matrix);
 
-    // Update instance count
+    // Update instance count and ensure buffers are updated
     treeInstanceCount++;
+    treeInstances.children.forEach(child => {
+        if (child instanceof THREE.InstancedMesh) {
+            child.count = treeInstanceCount;
+            child.instanceMatrix.needsUpdate = true;
+        }
+    });
 
     // Add physics body with optimized collision shape
-    const trunkShape = new CANNON.Cylinder(0.8, 0.9, 4, 8);
+    const trunkShape = new CANNON.Cylinder(0.8, 0.9, 4, 6); // Reduced segments to match geometry
     const treeBody = new CANNON.Body({
         mass: 0,
         material: terrainMaterial,
@@ -549,7 +571,7 @@ function createTree(x, z) {
     world.addBody(treeBody);
 
     // Add optimized pine collision
-    const pineShape = new CANNON.Cylinder(0.3, 3.0, 6, 8);
+    const pineShape = new CANNON.Cylinder(0.3, 3.0, 6, 6); // Reduced segments to match geometry
     const pineBody = new CANNON.Body({
         mass: 0,
         material: terrainMaterial,
@@ -1475,6 +1497,12 @@ document.addEventListener('keydown', (event) => {
     if (key && key in keys) {
         keys[key] = true;
     }
+    
+    // Add arrow key support
+    if (event.key === 'ArrowUp') keys.w = true;
+    if (event.key === 'ArrowLeft') keys.a = true;
+    if (event.key === 'ArrowDown') keys.s = true;
+    if (event.key === 'ArrowRight') keys.d = true;
 });
 
 document.addEventListener('keyup', (event) => {
@@ -1482,6 +1510,12 @@ document.addEventListener('keyup', (event) => {
     if (key && key in keys) {
         keys[key] = false;
     }
+    
+    // Add arrow key support
+    if (event.key === 'ArrowUp') keys.w = false;
+    if (event.key === 'ArrowLeft') keys.a = false;
+    if (event.key === 'ArrowDown') keys.s = false;
+    if (event.key === 'ArrowRight') keys.d = false;
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -1807,10 +1841,10 @@ function updateDashMeter() {
 }
 
 const DASH_COOLDOWN = 2000; // 4 seconds in milliseconds
-const DASH_FORCE_GROUND = 20; // Halved from 40
-const DASH_FORCE_AIR = 30; // Halved from 60
+const DASH_FORCE_GROUND = 1500; // Ground dash force (20 * 60)
+const DASH_FORCE_AIR = 2000; // Air dash force (30 * 60)
 const DASH_DURATION = 200;
-const MAX_DASH_HEIGHT = 40;
+const MAX_DASH_HEIGHT = 50; // Changed from 40 to 50 units
 
 // Add after player variables
 let canDash = true;
@@ -2063,6 +2097,11 @@ socket.on('playerDisconnected', (playerId) => {
 function animate() {
     requestAnimationFrame(animate);
 
+    // Calculate delta time
+    const now = Date.now();
+    const deltaTime = (now - lastSprintTime) / 1000; // Convert to seconds
+    lastSprintTime = now;
+
     // When paused, only render the scene and pause menu
     if (isPaused) {
         // Disable all player movement and physics
@@ -2180,28 +2219,28 @@ function animate() {
             camera.getWorldDirection(dashDirection);
             
             // Calculate the potential new height
-            const potentialHeight = playerBody.position.y + (dashDirection.y * DASH_FORCE_AIR);
+            const potentialHeight = playerBody.position.y + (dashDirection.y * DASH_FORCE_AIR * deltaTime);
             
             // If the dash would exceed max height, adjust the vertical component
             if (potentialHeight > MAX_DASH_HEIGHT) {
                 const remainingHeight = Math.max(0, MAX_DASH_HEIGHT - playerBody.position.y);
-                const heightRatio = remainingHeight / (dashDirection.y * DASH_FORCE_AIR);
+                const heightRatio = remainingHeight / (dashDirection.y * DASH_FORCE_AIR * deltaTime);
                 dashDirection.y *= heightRatio;
             }
             
             dashDirection.normalize();
             
-            // Apply dash force
+            // Apply dash force with delta time
             const dashForce = isOnGround ? DASH_FORCE_GROUND : DASH_FORCE_AIR;
             
             // Store dash direction and speed for maintaining momentum
             lastGroundMoveDirection.copy(dashDirection);
-            lastGroundSpeed = dashForce;
+            lastGroundSpeed = dashForce * deltaTime;
             
-            // Apply the dash velocity
-            playerBody.velocity.x = dashDirection.x * dashForce;
-            playerBody.velocity.y = dashDirection.y * dashForce;
-            playerBody.velocity.z = dashDirection.z * dashForce;
+            // Apply the dash velocity with delta time
+            playerBody.velocity.x = dashDirection.x * dashForce * deltaTime;
+            playerBody.velocity.y = dashDirection.y * dashForce * deltaTime;
+            playerBody.velocity.z = dashDirection.z * dashForce * deltaTime;
             
             // Reset dash after duration
             setTimeout(() => {
@@ -2214,19 +2253,15 @@ function animate() {
         updateDashMeter();
 
         // Update sprint meter only when moving and sprinting
-        const now = Date.now();
-        const deltaTime = now - lastSprintTime;
-        lastSprintTime = now;
-
         if (isSprinting && isMoving) {
-            sprintMeter = Math.max(0, sprintMeter - deltaTime);
+            sprintMeter = Math.max(0, sprintMeter - deltaTime * 1000); // Convert back to milliseconds for sprint meter
             if (sprintMeter === 0) {
                 isSprintExhausted = true;
                 isSprinting = false;
                 wasSprintingBeforeJump = false;
             }
         } else {
-            sprintMeter = Math.min(MAX_SPRINT_DURATION, sprintMeter + deltaTime);
+            sprintMeter = Math.min(MAX_SPRINT_DURATION, sprintMeter + deltaTime * 1000); // Convert back to milliseconds for sprint meter
             if (sprintMeter > MAX_SPRINT_DURATION * 0.3) {
                 isSprintExhausted = false;
             }
@@ -2274,7 +2309,7 @@ function animate() {
 
         // Handle jumping
         if (keys[' '] && isOnGround && canJump && !isCrouching) {
-            playerBody.velocity.y = JUMP_FORCE;
+            playerBody.velocity.y = JUMP_FORCE * deltaTime;
             canJump = false;
             isOnGround = false;
         }
@@ -2310,12 +2345,12 @@ function animate() {
                 // Keep current Y velocity
                 const currentYVelocity = playerBody.velocity.y;
                 
-                // Apply appropriate speed based on movement state
-                let currentSpeed = MOVEMENT_SPEED;
+                // Apply appropriate speed based on movement state with delta time
+                let currentSpeed = MOVEMENT_SPEED * deltaTime;
                 if (isSprinting) {
-                    currentSpeed = SPRINT_SPEED;
+                    currentSpeed = SPRINT_SPEED * deltaTime;
                 }
-                if (isCrouching) currentSpeed = CROUCH_SPEED;
+                if (isCrouching) currentSpeed = CROUCH_SPEED * deltaTime;
 
                 if (isOnGround && canControlMovement) {
                     // Store the last ground movement direction and speed
@@ -2333,8 +2368,8 @@ function animate() {
                 }
             } else if (isOnGround) {
                 if (canControlMovement) {
-                    playerBody.velocity.x *= (1 - GROUND_FRICTION);
-                    playerBody.velocity.z *= (1 - GROUND_FRICTION);
+                    playerBody.velocity.x *= (1 - GROUND_FRICTION * deltaTime);
+                    playerBody.velocity.z *= (1 - GROUND_FRICTION * deltaTime);
                     lastGroundMoveDirection.set(0, 0, 0);
                     lastGroundSpeed = 0;
                 }
