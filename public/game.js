@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import GameMap from './js/map.js';
 
+// Global variables for advertisement circles
+const adCircles = new Map(); // Map to store advertisement circles
+const adCircleTextures = new Map(); // Map to store advertisement textures
+
 // Game constants
 const COLLISION_GROUPS = {
     TERRAIN: 1,
@@ -172,6 +176,13 @@ const RELOAD_TIME = 3000; // 3 seconds in milliseconds
 const NAME_TAG_DISTANCE = 40; // Distance at which name tags start to fade
 const NAME_TAG_FADE_DISTANCE = 15; // Distance over which name tags fade out (from 40 to 55)
 const NAME_TAG_MAX_DISTANCE = 55; // Distance at which name tags completely disappear
+
+// Advertisement circle constants
+const AD_CIRCLE_DISTANCE = 40; // Distance at which ad circles start to fade
+const AD_CIRCLE_FADE_DISTANCE = 10; // Distance over which ad circles fade out
+const AD_CIRCLE_MAX_DISTANCE = 50; // Distance at which ad circles completely disappear
+const AD_CIRCLE_SIZE = 3; // Size of the advertisement circle
+const AD_CIRCLE_HEIGHT = 9; // Height above the tree
 
 // Player variables
 let playerBody;
@@ -571,7 +582,7 @@ function createTree(x, z) {
     world.addBody(treeBody);
 
     // Add optimized pine collision
-    const pineShape = new CANNON.Cylinder(0.3, 3.0, 6, 6); // Reduced segments to match geometry
+    const pineShape = new CANNON.Cylinder(0.3, 3.0, 6, 6);
     const pineBody = new CANNON.Body({
         mass: 0,
         material: terrainMaterial,
@@ -581,6 +592,16 @@ function createTree(x, z) {
     });
     pineBody.position.set(x, 5, z);
     world.addBody(pineBody);
+
+    // Add advertisement circle to 25% of trees
+    if (Math.random() < 0.25) {
+        const adCircle = createAdCircle('assets/Ad_VibeJam2025.png');
+        if (adCircle) {
+            adCircle.position.set(x, AD_CIRCLE_HEIGHT, z);
+            scene.add(adCircle);
+            adCircles.set(treeInstanceCount - 1, adCircle);
+        }
+    }
 }
 
 // Optimize the createEnvironment function
@@ -2470,6 +2491,9 @@ function animate() {
     // Update name labels to face camera
     updateNameLabels();
 
+    // Update advertisement circles to face camera
+    updateAdCircles();
+
     // Update coordinate display
     updateCoordinateDisplay();
 
@@ -3088,5 +3112,108 @@ playButton.addEventListener('click', () => {
     
     addGameLogMessage(`You have joined the game`, 'join');
 });
+
+
+// Function to create advertisement circle
+function createAdCircle(imageUrl) {
+    // Create high-resolution canvas for the advertisement
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 1024;  // Increased from 256 to 1024 for higher resolution
+    canvas.height = 1024; // Increased from 256 to 1024 for higher resolution
+
+    // Create solid white circular background
+    ctx.beginPath();
+    ctx.arc(512, 512, 480, 0, Math.PI * 2); // Scaled up coordinates for higher resolution
+    ctx.fillStyle = '#FFFFFF'; // Solid white background
+    ctx.fill();
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 16; // Increased line width for higher resolution
+    ctx.stroke();
+
+    // Create sprite material with a placeholder color
+    const spriteMaterial = new THREE.SpriteMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 1,
+        depthTest: true,
+        depthWrite: true
+    });
+    
+    // Create sprite
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(AD_CIRCLE_SIZE, AD_CIRCLE_SIZE, 1);
+    
+    // Load and draw the advertisement image
+    const img = new Image();
+    img.src = imageUrl;
+    img.onload = () => {
+        // Calculate size to fit in circle while maintaining aspect ratio
+        const maxDiameter = 800; // Maximum diameter for the image (leaving room for border)
+        const scale = Math.min(
+            maxDiameter / img.width,
+            maxDiameter / img.height,
+            1 // Never scale up, only down
+        );
+        
+        // Calculate centered position
+        const scaledWidth = img.width * scale;
+        const scaledHeight = img.height * scale;
+        const x = 512 - (scaledWidth / 2);
+        const y = 512 - (scaledHeight / 2);
+        
+        // Clear the area inside the circle before drawing the image
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(512, 512, 472, 0, Math.PI * 2); // Slightly smaller than border
+        ctx.clip();
+        
+        // Enable high-quality image rendering
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        // Draw the image
+        ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
+        ctx.restore();
+        
+        // Create texture from canvas with high-quality settings
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        texture.needsUpdate = true;
+        
+        // Update sprite material with the texture
+        sprite.material.map = texture;
+        sprite.material.needsUpdate = true;
+    };
+    
+    return sprite;
+}
+
+// Function to update advertisement circles
+function updateAdCircles() {
+    adCircles.forEach((adCircle, treeId) => {
+        if (!adCircle || !adCircle.material) return;
+        
+        // Make ad circle face camera
+        adCircle.quaternion.copy(camera.quaternion);
+        
+        // Calculate distance to ad circle
+        const distance = camera.position.distanceTo(adCircle.position);
+        
+        // Calculate opacity based on distance
+        let opacity = 1;
+        if (distance > AD_CIRCLE_DISTANCE) {
+            opacity = 1 - (distance - AD_CIRCLE_DISTANCE) / AD_CIRCLE_FADE_DISTANCE;
+            opacity = Math.max(0, Math.min(1, opacity));
+        }
+        
+        // Update ad circle visibility and opacity
+        adCircle.visible = opacity > 0;
+        adCircle.material.opacity = opacity;
+        adCircle.material.needsUpdate = true;
+    });
+}
 
 
